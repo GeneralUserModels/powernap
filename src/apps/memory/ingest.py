@@ -17,6 +17,7 @@ load_dotenv()
 
 from agent.builder import build_agent
 from apps.common.activity_streams import DEFAULT_FILTERED_STREAM_SOURCES
+from apps.common.markdown_patch import MarkdownPatchError, apply_markdown_patches
 from apps.common.structured_ops import StructuredOpsError, extract_json_object, require_list, require_string, safe_rel_path
 from apps.moments.core.incremental import read_checkpoint, write_checkpoint
 
@@ -25,10 +26,14 @@ _PROMPTS = Path(__file__).parent / "prompts"
 SHARED_WIKI_RULES = (_PROMPTS / "shared" / "wiki.txt").read_text()
 SHARED_SOURCE_RULES = (_PROMPTS / "shared" / "sources.txt").read_text()
 INVENTORY_RULES = (_PROMPTS / "rules" / "inventory.txt").read_text()
+OPPORTUNITY_RULES = (_PROMPTS / "rules" / "opportunities.txt").read_text()
 UPDATE_RULES = (_PROMPTS / "rules" / "update.txt").read_text()
+CREATE_RULES = (_PROMPTS / "rules" / "create.txt").read_text()
 FINALIZE_RULES = (_PROMPTS / "rules" / "finalize.txt").read_text()
 INVENTORY_TEMPLATE = (_PROMPTS / "inventory.txt").read_text()
+OPPORTUNITY_TEMPLATE = (_PROMPTS / "opportunities.txt").read_text()
 UPDATE_TEMPLATE = (_PROMPTS / "update.txt").read_text()
+CREATE_TEMPLATE = (_PROMPTS / "create.txt").read_text()
 FINALIZE_TEMPLATE = (_PROMPTS / "finalize.txt").read_text()
 SCHEMA_TEMPLATE = (_PROMPTS / "schema.md").read_text()
 
@@ -44,6 +49,8 @@ INVENTORY_KEYS = {
     "backfill_sources_to_sample",
     "rationale",
 }
+OPPORTUNITY_KEYS = {"page_candidates", "rejected_candidates", "notes"}
+PAGE_CANDIDATE_KEYS = {"title", "kind", "evidence", "novelty", "confidence", "recommended_action"}
 _JSON_BLOCK_RE = re.compile(r"```json\s*(\{.*?\})\s*```", re.DOTALL)
 _WIKI_LINK_RE = re.compile(r"\[\[([^\]\n]+)\]\]")
 PREVIEW_MAX_FILES = 20
@@ -405,7 +412,39 @@ def _parse_inventory(result: str, expected_mode: str) -> dict[str, Any]:
     return payload
 
 
+def _parse_opportunities(result: str) -> dict[str, Any]:
+    matches = _JSON_BLOCK_RE.findall(result)
+    if not matches:
+        raise ValueError("Page opportunity pass did not return a fenced JSON block")
+    payload = json.loads(matches[-1])
+    missing = OPPORTUNITY_KEYS - set(payload)
+    if missing:
+        raise ValueError(f"Page opportunity JSON missing keys: {', '.join(sorted(missing))}")
+    candidates = payload.get("page_candidates")
+    if not isinstance(candidates, list):
+        raise ValueError("Page opportunity JSON key 'page_candidates' must be a list")
+    for idx, candidate in enumerate(candidates):
+        if not isinstance(candidate, dict):
+            raise ValueError("Page opportunity candidates must be objects")
+        _validate_page_candidate(candidate, idx, "Page opportunity candidate")
+    rejected = payload.get("rejected_candidates")
+    if not isinstance(rejected, list):
+        raise ValueError("Page opportunity JSON key 'rejected_candidates' must be a list")
+    for idx, rejected_candidate in enumerate(rejected):
+        if not isinstance(rejected_candidate, dict):
+            raise ValueError("Rejected page opportunity candidates must be objects")
+        if not isinstance(rejected_candidate.get("title"), str):
+            raise ValueError(f"Rejected page opportunity candidate {idx} key 'title' must be a string")
+        if not isinstance(rejected_candidate.get("reason"), str):
+            raise ValueError(f"Rejected page opportunity candidate {idx} key 'reason' must be a string")
+    if not isinstance(payload.get("notes"), str):
+        raise ValueError("Page opportunity JSON key 'notes' must be a string")
+    return payload
+
+
 def _validate_markdown_for_write(path: Path, memory_dir: Path, markdown: str, allow_special: bool) -> None:
+    memory_dir = memory_dir.resolve()
+    path = path.resolve()
     try:
         rel = path.relative_to(memory_dir)
     except ValueError as exc:
@@ -446,6 +485,64 @@ def _parse_page_ops(result: str, memory_dir: Path, allow_special: bool) -> tuple
     return ops, notes.strip()
 
 
+def _validate_page_candidate(candidate: dict[str, Any], idx: int, label: str) -> None:
+    missing_candidate = PAGE_CANDIDATE_KEYS - set(candidate)
+    if missing_candidate:
+        raise ValueError(f"{label} {idx} missing keys: {', '.join(sorted(missing_candidate))}")
+    for key in ("title", "kind", "novelty", "recommended_action"):
+        if not isinstance(candidate.get(key), str):
+            raise ValueError(f"{label} {idx} key {key!r} must be a string")
+    evidence = candidate.get("evidence")
+    if not isinstance(evidence, list) or not all(isinstance(item, str) for item in evidence):
+        raise ValueError(f"{label} {idx} key 'evidence' must be a list of strings")
+    confidence = candidate.get("confidence")
+    if not isinstance(confidence, (int, float)) or not 0 <= confidence <= 1:
+        raise ValueError(f"{label} {idx} key 'confidence' must be a number from 0 to 1")
+
+
+def _parse_update_patch_ops(result: str, memory_dir: Path) -> tuple[dict[str, list[dict[str, Any]]], str]:
+    memory_dir = memory_dir.resolve()
+    try:
+        payload = extract_json_object(result)
+    except StructuredOpsError as exc:
+        raise ValueError(str(exc)) from exc
+    ops: dict[str, list[dict[str, Any]]] = {"create_pages": [], "update_pages": [], "deferred_page_candidates": []}
+    for item in require_list(payload, "create_pages"):
+        if item:
+            raise ValueError("Update pass create_pages must be empty; new pages are handled by the create pass")
+    for item in require_list(payload, "update_pages"):
+        if not isinstance(item, dict):
+            raise ValueError("update_pages entries must be objects")
+        rel = require_string(item, "path")
+        path = safe_rel_path(memory_dir, rel, suffix=".md")
+        if not path.exists():
+            raise ValueError(f"update_pages patch target does not exist: {rel}")
+        _validate_markdown_for_write(path, memory_dir, path.read_text(), allow_special=False)
+        patches = item.get("patches")
+        if not isinstance(patches, list) or not patches:
+            raise ValueError(f"update_pages entry for {rel} must include non-empty patches list")
+        for patch in patches:
+            if not isinstance(patch, dict):
+                raise ValueError(f"patch entries for {rel} must be objects")
+        ops["update_pages"].append({"path": str(path.resolve().relative_to(memory_dir)), "patches": patches})
+    deferred = payload.get("deferred_page_candidates", [])
+    if deferred is None:
+        deferred = []
+    if not isinstance(deferred, list):
+        raise ValueError("deferred_page_candidates must be a list")
+    for idx, candidate in enumerate(deferred):
+        if not isinstance(candidate, dict):
+            raise ValueError("deferred_page_candidates entries must be objects")
+        _validate_page_candidate(candidate, idx, "Deferred page candidate")
+        ops["deferred_page_candidates"].append(candidate)
+    notes = payload.get("notes", "")
+    if notes is None:
+        notes = ""
+    if not isinstance(notes, str):
+        raise ValueError("Page operation notes must be a string")
+    return ops, notes.strip()
+
+
 def _apply_page_ops(memory_dir: Path, ops: dict[str, list[dict[str, str]]]) -> list[str]:
     changed: list[str] = []
     for item in ops.get("create_pages", []):
@@ -460,6 +557,23 @@ def _apply_page_ops(memory_dir: Path, ops: dict[str, list[dict[str, str]]]) -> l
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(item["markdown"])
         changed.append(str(path.relative_to(memory_dir)))
+    return sorted(set(changed))
+
+
+def _apply_update_patch_ops(memory_dir: Path, ops: dict[str, list[dict[str, Any]]]) -> list[str]:
+    memory_dir = memory_dir.resolve()
+    changed: list[str] = []
+    for item in ops.get("update_pages", []):
+        path = safe_rel_path(memory_dir, item["path"], suffix=".md")
+        original = path.read_text()
+        try:
+            updated, _applied = apply_markdown_patches(original, item["patches"])
+        except MarkdownPatchError as exc:
+            raise ValueError(f"Failed to patch {item['path']}: {exc}") from exc
+        _validate_markdown_for_write(path, memory_dir, updated, allow_special=False)
+        if updated != original:
+            path.write_text(updated)
+            changed.append(str(path.resolve().relative_to(memory_dir)))
     return sorted(set(changed))
 
 
@@ -501,6 +615,38 @@ def _update_prompt(now: str, logs_dir: str, memory_dir: Path, inputs: IngestInpu
         new_inputs_list=inputs.new_inputs_list,
         existing_page_metadata=_page_metadata_list(memory_dir),
         inventory_json=_format_json(inventory),
+    )
+
+
+def _opportunity_prompt(now: str, logs_dir: str, memory_dir: Path, inputs: IngestInputs, inventory: dict[str, Any]) -> str:
+    return OPPORTUNITY_TEMPLATE.format(
+        **_base_prompt_context(now, logs_dir, memory_dir),
+        opportunity_rules=OPPORTUNITY_RULES,
+        mode=inputs.mode,
+        new_inputs_list=inputs.new_inputs_list,
+        existing_page_metadata=_page_metadata_list(memory_dir),
+        inventory_json=_format_json(inventory),
+    )
+
+
+def _create_prompt(
+    now: str,
+    logs_dir: str,
+    memory_dir: Path,
+    inputs: IngestInputs,
+    inventory: dict[str, Any],
+    opportunities: dict[str, Any],
+    update_deferred_candidates: list[dict[str, Any]] | None = None,
+) -> str:
+    return CREATE_TEMPLATE.format(
+        **_base_prompt_context(now, logs_dir, memory_dir),
+        create_rules=CREATE_RULES,
+        mode=inputs.mode,
+        new_inputs_list=inputs.new_inputs_list,
+        existing_page_metadata=_page_metadata_list(memory_dir),
+        inventory_json=_format_json(inventory),
+        opportunity_json=_format_json(opportunities),
+        update_deferred_candidates_json=_format_json(update_deferred_candidates or []),
     )
 
 
@@ -576,6 +722,18 @@ def run(
     )
     inventory = _parse_inventory(inventory_result, inputs.mode)
 
+    opportunity_result = _run_agent_pass(
+        "opportunities",
+        _opportunity_prompt(now, logs_dir, memory_dir, inputs, inventory),
+        logs_dir,
+        model,
+        api_key,
+        on_round,
+        subagent_model,
+        subagent_api_key,
+    )
+    opportunities = _parse_opportunities(opportunity_result)
+
     before_mtimes = {str(p.relative_to(memory_dir)): p.stat().st_mtime for p in _all_memory_markdown(memory_dir)}
     update_result = _run_agent_pass(
         "update",
@@ -587,10 +745,38 @@ def run(
         subagent_model,
         subagent_api_key,
     )
-    update_ops, update_notes = _parse_page_ops(update_result, memory_dir, allow_special=False)
-    update_changed = _apply_page_ops(memory_dir, update_ops)
-    after_update_mtimes = {str(p.relative_to(memory_dir)): p.stat().st_mtime for p in _all_memory_markdown(memory_dir)}
-    changed = sorted(set(update_changed) | {rel for rel, mtime in after_update_mtimes.items() if before_mtimes.get(rel) != mtime})
+    update_ops, update_notes = _parse_update_patch_ops(update_result, memory_dir)
+    update_changed = _apply_update_patch_ops(memory_dir, update_ops)
+
+    create_result = _run_agent_pass(
+        "create",
+        _create_prompt(
+            now,
+            logs_dir,
+            memory_dir,
+            inputs,
+            inventory,
+            opportunities,
+            update_ops.get("deferred_page_candidates", []),
+        ),
+        logs_dir,
+        model,
+        api_key,
+        on_round,
+        subagent_model,
+        subagent_api_key,
+    )
+    create_ops, create_notes = _parse_page_ops(create_result, memory_dir, allow_special=False)
+    if create_ops.get("update_pages"):
+        raise ValueError("Create pass returned update_pages; existing pages must be updated by the update pass")
+    create_changed = _apply_page_ops(memory_dir, create_ops)
+
+    after_create_mtimes = {str(p.relative_to(memory_dir)): p.stat().st_mtime for p in _all_memory_markdown(memory_dir)}
+    changed = sorted(
+        set(update_changed)
+        | set(create_changed)
+        | {rel for rel, mtime in after_create_mtimes.items() if before_mtimes.get(rel) != mtime}
+    )
     today = datetime.now().strftime("%Y-%m-%d")
     validation_issues = _validate_wiki(memory_dir, today)
 
@@ -613,15 +799,22 @@ def run(
 
     write_checkpoint(checkpoint_path)
     update_notes_text = f"\nNotes: {update_notes}" if update_notes else ""
+    create_notes_text = f"\nNotes: {create_notes}" if create_notes else ""
     finalize_notes_text = f"\nNotes: {finalize_notes}" if finalize_notes else ""
 
     return (
         "## Inventory\n\n"
         f"{inventory_result}\n\n"
+        "## Page Opportunities\n\n"
+        f"{opportunity_result}\n\n"
         "## Update\n\n"
         f"{update_result}\n\n"
-        f"Applied update page ops: {', '.join(changed) or '(none)'}"
+        f"Applied update page ops: {', '.join(update_changed) or '(none)'}"
         f"{update_notes_text}\n\n"
+        "## Create\n\n"
+        f"{create_result}\n\n"
+        f"Applied create page ops: {', '.join(create_changed) or '(none)'}"
+        f"{create_notes_text}\n\n"
         "## Finalize\n\n"
         f"{finalize_result}\n\n"
         f"Applied finalize page ops."

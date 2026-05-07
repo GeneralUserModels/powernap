@@ -205,6 +205,7 @@ def _candidate_search_text(candidate: MomentCandidate) -> str:
             candidate.description,
             candidate.specific_instructions,
             candidate.desired_artifact,
+            candidate.likely_next_need,
             " ".join(candidate.evidence),
             " ".join(candidate.source_paths),
             candidate.why_now,

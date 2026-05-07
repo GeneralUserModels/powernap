@@ -1,15 +1,15 @@
 ## Rules
 
-Output content-page operations only. Create or update normal memory wiki pages from the inventory plan.
+Output existing content-page patch operations only. Update normal memory wiki pages from the inventory plan without rewriting full pages.
 
 Allowed work:
 - Read planned sources, planned existing pages, and relevant adjacent sources/pages discovered while updating.
-- Create new content pages for supported people, projects, themes, relationships, or patterns.
-- Create additional content pages for grounded entities discovered while reading, even if they were not named in the inventory plan.
 - Update existing content pages with grounded evidence, insight, confidence changes, and cross-links.
-- Split an overbroad content page when needed, keeping the original as a hub.
+- Identify overbroad pages, missing entities, or split targets that should become pages, but return them as `deferred_page_candidates` instead of creating pages here.
 
 Not allowed:
+- Do not create new content pages.
+- Do not return full-page markdown for existing pages.
 - Do not update `index.md`, `log.md`, or `schema.md`.
 - Do not do catalog repair or operations logging.
 - Do not return a new inventory plan.
@@ -18,11 +18,11 @@ Not allowed:
 
 Execution guidance:
 - Planning is useful when it improves coverage. Keep any plan compact. Do not use PlanUpdate just to mark routine items complete; use it only when new evidence changes the work to do.
-- After reading the planned evidence and pages, batch related full-page replacements into the JSON response.
+- After reading the planned evidence and pages, batch related patch operations into the JSON response.
+- Preserve existing structure and detail by default. Prefer `append_to_section`, `append_section`, or `insert_after_heading`.
+- Use `replace_section` only for a narrow section that has become incoherent. Never compress a full page into a summary.
 - Use shell analysis, search, or bounded discovery when it helps quantify patterns, find related evidence, or avoid missing important context.
-- Create focused new pages liberally for grounded people, projects, tools, labs, themes, relationships, modules, or patterns.
-- Standalone pages are appropriate even when the entity appears inside a dashboard, profile, or activity screen, as long as the page can state grounded facts with confidence.
-- Avoid leaving dangling `[[wiki-links]]`: every linked entity should have a page or be represented by an existing page/index entry.
-- Use hub pages when they clarify navigation, not as a substitute for specific grounded pages.
+- Avoid leaving dangling `[[wiki-links]]`: every linked entity should already have a page or be represented by an existing page/index entry.
+- Use `deferred_page_candidates` to hand off missing page opportunities or hub/split needs discovered during updates.
 
 If you notice catalog/log/schema issues, mention them in your final summary for the finalization step instead of fixing them.

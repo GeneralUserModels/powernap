@@ -1,0 +1,61 @@
+Current date and time: **{now}**
+
+Mode: `{mode}`
+
+{opportunity_rules}
+
+{shared_wiki_rules}
+
+{shared_source_rules}
+
+## Inventory Plan
+
+```json
+{inventory_json}
+```
+
+## Existing Content Page Metadata
+
+{existing_page_metadata}
+
+## New Inputs Detected
+
+{new_inputs_list}
+
+## Task
+
+Find page opportunities that are not already represented by the existing wiki metadata.
+
+Read the planned sources from inventory, sample backfill sources when useful, and use bounded shell analysis when it helps identify repeated people, projects, tools, relationships, workflows, etc. 
+
+Return candidate pages with grounded evidence and a novelty reason.
+
+End with a single fenced JSON block. It must be the last thing in your final message.
+
+```json
+{{
+  "page_candidates": [
+    {{
+      "title": "Natural Page Title",
+      "kind": "person|project|tool|theme|workflow|relationship|place|other",
+      "evidence": ["source/path: concise grounded evidence"],
+      "novelty": "Why existing pages or index entries do not already cover this.",
+      "confidence": 0.45,
+      "recommended_action": "create_stub|create_full|wait"
+    }}
+  ],
+  "rejected_candidates": [
+    {{
+      "title": "Candidate Title",
+      "reason": "duplicate|too_thin|unsupported"
+    }}
+  ],
+  "notes": "Concise explanation, including why no pages should be created if page_candidates is empty."
+}}
+```
+
+Rules:
+- Return only valid JSON in the fenced block.
+- Evidence must cite a source path or existing page path.
+- Favor `create_stub` for grounded but early signals; a useful paragraph is enough for a starter page.
+- Use `wait` only when evidence is too thin or duplicative.

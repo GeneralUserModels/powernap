@@ -24,34 +24,56 @@ Mode: `{mode}`
 
 ## Task
 
-Execute the inventory plan. Read the planned sources and existing pages. Return page operations for normal content pages with grounded facts, insight, confidence scores, and cross-links.
+Execute the inventory plan for existing pages. Read the planned sources and existing pages. Return patch operations for normal content pages with grounded facts, insight, confidence scores, and cross-links.
 
 Important:
 - Read an existing page before editing it.
-- Prefer improving existing pages over creating near-duplicates.
-- Create a page when a real entity, project, person, theme, or pattern has enough evidence for a useful paragraph.
-- Create pages for newly discovered grounded entities even when inventory did not list them upfront.
-- If you add a `[[wiki-link]]` to a new entity, also create or update the target page unless an existing page or index entry already represents it.
+- Prefer improving existing pages over requesting near-duplicates.
+- Do not create new pages in this pass. If you discover a missing entity or split target that deserves a page, add it to `deferred_page_candidates`; the create pass handles new pages.
+- Only add `[[wiki-links]]` to pages or index entries that are already represented.
 - If new information contradicts an existing page, update the page, lower confidence where needed, and preserve the older claim only when it remains historically useful.
 
-Do not write files directly. Python will apply the returned operations after validating paths and frontmatter.
+Do not write files directly. Python will apply the returned patches after validating paths and frontmatter.
 
 End with a single fenced JSON block. It must be the last thing in your final message.
 
 ```json
 {{
-  "create_pages": [
-    {{
-      "path": "relative/page.md",
-      "markdown": "---\\ntitle: Page Title\\nconfidence: 0.7\\nlast_updated: YYYY-MM-DD\\n---\\n\\nPage body."
-    }}
-  ],
+  "create_pages": [],
   "update_pages": [
     {{
       "path": "existing/page.md",
-      "markdown": "---\\ntitle: Existing Page\\nconfidence: 0.8\\nlast_updated: YYYY-MM-DD\\n---\\n\\nFull replacement markdown."
+      "patches": [
+        {{
+          "type": "update_frontmatter",
+          "fields": {{"last_updated": "YYYY-MM-DD", "confidence": 0.8}}
+        }},
+        {{
+          "type": "append_to_section",
+          "heading": "## Existing Section",
+          "markdown": "- New grounded evidence or insight. [c:0.8]"
+        }}
+      ]
     }}
   ],
-  "notes": "Concise summary of pages created, pages updated, and unresolved catalog/log/schema issues."
+  "deferred_page_candidates": [
+    {{
+      "title": "Natural Page Title",
+      "kind": "person|project|tool|theme|workflow|relationship|place|other",
+      "evidence": ["source/path or existing/page.md: concise grounded evidence"],
+      "novelty": "Why this should become a separate page rather than remaining inside the current page.",
+      "confidence": 0.55,
+      "recommended_action": "create_stub|create_full|wait"
+    }}
+  ],
+  "notes": "Concise summary of pages updated, deferred candidates, and unresolved catalog/log/schema issues."
 }}
 ```
+
+Supported patch types:
+- `update_frontmatter`: update scalar frontmatter fields using `fields`.
+- `append_section`: append a new section to the end of the page using `heading` and `markdown`.
+- `append_to_section`: append content to an existing section using `heading` and `markdown`.
+- `insert_after_heading`: insert content immediately after an existing heading using `heading` and `markdown`.
+- `replace_exact`: replace one unique exact string using `old_text` and `new_text`.
+- `replace_section`: replace the content under an existing heading using `heading` and `markdown`; use only when the section has lost coherence.

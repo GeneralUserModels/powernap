@@ -1,0 +1,58 @@
+Current date and time: **{now}**
+
+Mode: `{mode}`
+
+{create_rules}
+
+{shared_wiki_rules}
+
+{shared_source_rules}
+
+## Inventory Plan
+
+```json
+{inventory_json}
+```
+
+## Page Opportunities
+
+```json
+{opportunity_json}
+```
+
+## Deferred Page Candidates From Update
+
+```json
+{update_deferred_candidates_json}
+```
+
+## Existing Content Page Metadata
+
+{existing_page_metadata}
+
+## New Inputs Detected
+
+{new_inputs_list}
+
+## Task
+
+Draft new normal content pages from the page opportunities and deferred page candidates from update.
+
+Read the cited evidence before writing. Create focused pages for grounded candidates that are not already represented by existing pages or index entries. Treat deferred update candidates as explicit handoffs from existing-page work, especially when an overbroad page should be split or a missing entity was discovered while patching. Starter pages are acceptable when they contain a useful grounded paragraph, confidence scores, and clear links to adjacent pages.
+
+Do not write files directly. Python will apply the returned operations after validating paths and frontmatter.
+
+End with a single fenced JSON block. It must be the last thing in your final message.
+
+```json
+{{
+  "create_pages": [
+    {{
+      "path": "relative/page.md",
+      "markdown": "---\\ntitle: Page Title\\nconfidence: 0.45\\nlast_updated: YYYY-MM-DD\\n---\\n\\nPage body."
+    }}
+  ],
+  "update_pages": [],
+  "notes": "Concise summary of pages created and candidates skipped."
+}}
+```

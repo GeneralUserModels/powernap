@@ -1,0 +1,22 @@
+## Rules
+
+Output new content-page operations only. This pass exists to grow the wiki.
+
+Allowed work:
+- Create new normal memory wiki pages from grounded page opportunities.
+- Create new normal memory wiki pages from deferred update candidates, especially split targets discovered while patching existing pages.
+- Create low-confidence starter pages when a candidate has enough evidence for one useful paragraph.
+- Add `[[wiki-links]]` to existing represented pages when natural.
+- Skip candidates only when they duplicate an existing page, lack evidence after reading, or would be misleading.
+
+Not allowed:
+- Do not update existing normal content pages.
+- Do not update `index.md`, `log.md`, or `schema.md`.
+- Do not do catalog repair or operations logging.
+- Do not call `write_file` or `edit_file`; return JSON operations only.
+
+Execution guidance:
+- Prefer 3-8 focused new pages when there are meaningful grounded candidates. On first runs, 5-12 pages is appropriate when candidates are grounded and distinct.
+- Use source dates exactly as provided in evidence.
+- Keep pages compact but useful: facts, why it matters, confidence, and links.
+- Avoid dangling `[[wiki-links]]`; link only to represented pages or candidates you are creating in the same response.

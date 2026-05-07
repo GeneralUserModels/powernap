@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
 
 
 class StrictModel(BaseModel):
@@ -18,19 +18,29 @@ class CandidatePayload(StrictModel):
     title: str
     description: str
     cadence: Literal["once", "scheduled", "trigger"]
-    schedule: str = ""
-    trigger: str = ""
+    schedule: str
+    trigger: str
     confidence: float
     usefulness: int
     specific_instructions: str
     desired_artifact: str
     evidence: list[str]
     source_paths: list[str]
+    likely_next_need: str
     why_now: str
     user_value: str
 
+    @model_validator(mode="after")
+    def validate_cadence_fields(self):
+        if self.cadence == "scheduled" and not self.schedule.strip():
+            raise ValueError("scheduled candidates require non-empty schedule")
+        if self.cadence == "trigger" and not self.trigger.strip():
+            raise ValueError("trigger candidates require non-empty trigger")
+        return self
+
 
 class MomentIdea(StrictModel):
+    likely_next_need: str
     title: str
     topic_hint: str
     artifact: str

@@ -34,6 +34,4 @@ Return an empty `remove` list. There is no chunk-local draft state to remove fro
 
 Use `rejected` for idea cards from this chunk that should not become drafts.
 
-For candidate cadence fields, use `schedule` only for `scheduled` cadence and `trigger` only for `trigger` cadence.
-
 If an idea should update an accepted moment, upsert a candidate using the accepted moment's stable slug/topic so reconciliation can route it later.

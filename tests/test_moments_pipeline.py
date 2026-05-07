@@ -50,6 +50,7 @@ def _candidate(**overrides):
         "desired_artifact": "A ranked feed of papers.",
         "evidence": ["memory/index.md mentions research"],
         "source_paths": ["memory/index.md"],
+        "likely_next_need": "The user will need to keep up with new research without manually scanning sources.",
         "why_now": "The user is actively researching.",
         "user_value": "Saves triage time.",
     }
@@ -59,6 +60,7 @@ def _candidate(**overrides):
 
 def _idea(**overrides):
     base = {
+        "likely_next_need": "The user will need to keep up with new research without manually scanning sources.",
         "title": "Paper Digest",
         "topic_hint": "research",
         "artifact": "A ranked feed of papers.",
@@ -207,6 +209,24 @@ class MomentsPipelineTests(unittest.TestCase):
             validate_candidate(_candidate(cadence="scheduled", schedule=""))
         with self.assertRaises(CandidateError):
             validate_candidate(_candidate(cadence="trigger", trigger=""))
+
+    def test_structured_candidate_payload_requires_cadence_fields(self):
+        with self.assertRaises(ValidationError):
+            DraftActionPayload.model_validate({
+                "upserts": [_candidate(cadence="scheduled", schedule="")],
+                "rejected": [],
+                "remove": [],
+                "notes": "",
+            })
+        with self.assertRaises(ValidationError):
+            raw = _candidate(cadence="scheduled")
+            raw.pop("schedule")
+            DraftActionPayload.model_validate({
+                "upserts": [raw],
+                "rejected": [],
+                "remove": [],
+                "notes": "",
+            })
 
     def test_markdown_render_uses_cadence_frontmatter(self):
         candidate = validate_candidate(_candidate(cadence="scheduled", schedule="Monday at 9am"))
@@ -399,6 +419,8 @@ class MomentsPipelineTests(unittest.TestCase):
             self.assertTrue(accepted.exists())
             self.assertIn("cadence: scheduled", accepted.read_text())
             self.assertIn("paper-digest", promote_structured.instructions[0])
+            self.assertIn("likely_next_need", promote_structured.instructions[0])
+            self.assertIn("advances that future need", promote_structured.instructions[0])
 
     def test_invalid_discovery_does_not_write_checkpoint(self):
         with tempfile.TemporaryDirectory() as d:
