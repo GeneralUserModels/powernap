@@ -25,4 +25,4 @@ Special files:
 - `log.md`: append-only dated operations log.
 - `schema.md`: conventions document.
 
-Do not delete existing wiki pages. Update, split, or lower confidence instead. If a page has lost topical coherence, split it into focused sub-pages and turn the original into a hub.
+Do not delete existing wiki pages during normal page updates. Update, split, or lower confidence instead. If a page has lost topical coherence, split it into focused sub-pages; only the finalize pass may delete the original page, and only when it is now a pure redirect/tombstone like "(moved)" or all useful content has been carried into replacement pages.

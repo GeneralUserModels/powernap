@@ -16,6 +16,10 @@ class PageWriteOp(StrictModel):
     markdown: str = Field(min_length=1)
 
 
+class PageDeleteOp(StrictModel):
+    path: str = Field(min_length=1, pattern=RELATIVE_MARKDOWN_PATH)
+
+
 class PageMarkdownOp(StrictModel):
     markdown: str = Field(min_length=1)
 
@@ -33,6 +37,7 @@ class NewPageCreatePayload(StrictModel):
 
 
 class FinalizePageOpsPayload(StrictModel):
-    create_pages: list[PageWriteOp]
-    update_pages: list[PageWriteOp]
+    create_pages: list[PageWriteOp] = Field(default_factory=list)
+    update_pages: list[PageWriteOp] = Field(default_factory=list)
+    delete_pages: list[PageDeleteOp] = Field(default_factory=list)
     notes: str

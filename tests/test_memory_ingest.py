@@ -371,6 +371,20 @@ class MemoryIngestTests(unittest.TestCase):
                 issues,
             )
 
+    def test_validation_ignores_archived_pages(self):
+        with tempfile.TemporaryDirectory() as d:
+            memory = Path(d) / "logs" / "memory"
+            ingest._bootstrap_memory(memory)
+            (memory / "_archive").mkdir()
+            (memory / "_archive" / "old-project.md").write_text(
+                "---\ntitle: Old Project\nconfidence: 0.4\nlast_updated: 2026-05-03\n---\n\nArchived page.\n"
+            )
+            (memory / "log.md").write_text("## 2026-05-03\n- Checked memory.\n")
+
+            issues = ingest._validate_wiki(memory, "2026-05-03")
+
+            self.assertFalse(any(issue["path"] == "_archive/old-project.md" for issue in issues))
+
     def test_validation_detects_unresolved_wiki_links(self):
         with tempfile.TemporaryDirectory() as d:
             memory = Path(d) / "logs" / "memory"
@@ -502,6 +516,59 @@ class MemoryIngestTests(unittest.TestCase):
             self.assertIn("confidence: 0.82", text)
             self.assertIn("A long-standing detail that must survive updates.", text)
             self.assertIn("- New evidence. [c:0.8]", text)
+
+    def test_finalize_ops_can_delete_superseded_content_pages(self):
+        with tempfile.TemporaryDirectory() as d:
+            memory = Path(d) / "logs" / "memory"
+            ingest._bootstrap_memory(memory)
+            (memory / "old-project.md").write_text(
+                "---\n"
+                "title: Old Project (moved)\n"
+                "confidence: 0.2\n"
+                "last_updated: 2026-05-03\n"
+                "---\n\n"
+                "Moved to new-project.md.\n"
+            )
+            result = "```json\n" + json.dumps({
+                "create_pages": [],
+                "update_pages": [
+                    {"path": "index.md", "markdown": "# Memory Index\n\n"},
+                    {"path": "log.md", "markdown": "# Memory Log\n\n## 2026-05-03\n- Deleted old-project.md after move.\n"},
+                ],
+                "delete_pages": [{"path": "old-project.md"}],
+                "notes": "removed moved page",
+            }) + "\n```"
+
+            ops, notes = ingest._parse_page_ops(
+                result,
+                memory,
+                allow_special=True,
+                payload_model=FinalizePageOpsPayload,
+            )
+            changed = ingest._apply_page_ops(memory, ops)
+
+            self.assertEqual(notes, "removed moved page")
+            self.assertIn("old-project.md", changed)
+            self.assertFalse((memory / "old-project.md").exists())
+
+    def test_finalize_ops_reject_deleting_special_files(self):
+        with tempfile.TemporaryDirectory() as d:
+            memory = Path(d) / "logs" / "memory"
+            ingest._bootstrap_memory(memory)
+            result = "```json\n" + json.dumps({
+                "create_pages": [],
+                "update_pages": [],
+                "delete_pages": [{"path": "index.md"}],
+                "notes": "bad",
+            }) + "\n```"
+
+            with self.assertRaises(ValueError):
+                ingest._parse_page_ops(
+                    result,
+                    memory,
+                    allow_special=True,
+                    payload_model=FinalizePageOpsPayload,
+                )
 
     def test_existing_page_update_payload_rejects_wrong_shape(self):
         with self.assertRaises(ValidationError):
@@ -657,6 +724,7 @@ class MemoryIngestTests(unittest.TestCase):
             self.assertIn("Do not use shell redirection, append operators, heredocs", prompt)
             self.assertIn("Do not call `write_file` or `edit_file`", prompt)
             self.assertIn("`update_pages`", prompt)
+            self.assertIn("`delete_pages`", prompt)
             self.assertIn("Planning is optional. Keep it compact", prompt)
             self.assertIn("read them together once", prompt)
 

@@ -40,6 +40,7 @@ SCHEMA_TEMPLATE = (_PROMPTS / "schema.md").read_text()
 FILTERED_STREAM_SOURCES = DEFAULT_FILTERED_STREAM_SOURCES
 
 SPECIAL_MEMORY_FILES = {"index.md", "log.md", "schema.md"}
+ARCHIVE_MEMORY_DIR = "_archive"
 INVENTORY_KEYS = {
     "mode",
     "sources_to_read",
@@ -153,7 +154,11 @@ def _new_files_in(base: Path, pattern: str, since: datetime | None) -> list[Path
 
 
 def _is_hidden_or_special(rel: Path) -> bool:
-    return str(rel) in SPECIAL_MEMORY_FILES or any(part.startswith(".") for part in rel.parts)
+    return (
+        str(rel) in SPECIAL_MEMORY_FILES
+        or (bool(rel.parts) and rel.parts[0] == ARCHIVE_MEMORY_DIR)
+        or any(part.startswith(".") for part in rel.parts)
+    )
 
 
 def _memory_pages(memory_dir: Path) -> list[Path]:
@@ -173,7 +178,7 @@ def _all_memory_markdown(memory_dir: Path) -> list[Path]:
         return []
     return sorted(
         p for p in memory_dir.rglob("*.md")
-        if not any(part.startswith(".") for part in p.relative_to(memory_dir).parts)
+        if not _is_hidden_or_special(p.relative_to(memory_dir))
     )
 
 
@@ -546,6 +551,21 @@ def _validate_markdown_for_write(path: Path, memory_dir: Path, markdown: str, al
         raise ValueError(f"Memory content page must include YAML frontmatter: {rel}")
 
 
+def _validate_page_for_delete(path: Path, memory_dir: Path) -> None:
+    memory_dir = memory_dir.resolve()
+    path = path.resolve()
+    try:
+        rel = path.relative_to(memory_dir)
+    except ValueError as exc:
+        raise ValueError(f"Memory delete path escapes memory dir: {path}") from exc
+    if _is_hidden_or_special(rel):
+        raise ValueError(f"Memory delete path must be a normal content page: {rel}")
+    if not path.exists():
+        raise ValueError(f"delete_pages target does not exist: {rel}")
+    if not path.is_file():
+        raise ValueError(f"delete_pages target is not a file: {rel}")
+
+
 def _has_frontmatter_text(text: str) -> bool:
     return text.startswith("---\n") and "\n---\n" in text[4:]
 
@@ -571,8 +591,8 @@ def _parse_page_ops(
                 payload = payload_model.model_validate(extract_json_object(result)).model_dump()
     except (StructuredOpsError, ValueError) as exc:
         raise ValueError(str(exc)) from exc
-    ops: dict[str, list[dict[str, str]]] = {"create_pages": [], "update_pages": []}
-    for op_name in ops:
+    ops: dict[str, list[dict[str, str]]] = {"create_pages": [], "update_pages": [], "delete_pages": []}
+    for op_name in ("create_pages", "update_pages"):
         for item in require_list(payload, op_name):
             if not isinstance(item, dict):
                 raise ValueError(f"{op_name} entries must be objects")
@@ -592,6 +612,22 @@ def _parse_page_ops(
                 raise ValueError(f"update_pages target does not exist: {rel}")
             _validate_markdown_for_write(path, memory_dir, markdown, allow_special=allow_special)
             ops[op_name].append({"path": str(path.relative_to(memory_dir)), "markdown": markdown})
+    for item in require_list(payload, "delete_pages"):
+        if not isinstance(item, dict):
+            raise ValueError("delete_pages entries must be objects")
+        rel = require_string(item, "path")
+        path = safe_rel_path(memory_dir, rel, suffix=".md")
+        _validate_page_for_delete(path, memory_dir)
+        ops["delete_pages"].append({"path": str(path.relative_to(memory_dir))})
+    written_paths = {
+        item["path"]
+        for op_name in ("create_pages", "update_pages")
+        for item in ops.get(op_name, [])
+    }
+    deleted_paths = {item["path"] for item in ops.get("delete_pages", [])}
+    conflicts = sorted(written_paths & deleted_paths)
+    if conflicts:
+        raise ValueError(f"Memory op cannot write and delete the same page: {', '.join(conflicts)}")
     notes = payload.get("notes", "")
     if notes is None:
         notes = ""
@@ -615,6 +651,16 @@ def _apply_page_ops(memory_dir: Path, ops: dict[str, list[dict[str, str]]]) -> l
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(item["markdown"])
         changed.append(str(path.relative_to(memory_dir)))
+    for item in ops.get("delete_pages", []):
+        path = safe_rel_path(memory_dir, item["path"], suffix=".md")
+        _validate_page_for_delete(path, memory_dir)
+        rel = str(path.relative_to(memory_dir))
+        path.unlink()
+        changed.append(rel)
+        parent = path.parent
+        while parent != memory_dir and not any(parent.iterdir()):
+            parent.rmdir()
+            parent = parent.parent
     return sorted(set(changed))
 
 
