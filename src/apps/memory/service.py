@@ -90,8 +90,8 @@ async def run_memory_service(state) -> None:
     logger.info("Memory wiki service started")
 
     logs_dir = str(Path(state.config.log_dir).resolve())
-    last_run_file = Path(logs_dir) / "memory" / ".memory_last_run"
-    lint_last_run_file = Path(logs_dir) / "memory" / ".memory_lint_last_run"
+    ingest_checkpoint_file = Path(logs_dir) / "memory" / ".last_ingest"
+    lint_checkpoint_file = Path(logs_dir) / "memory" / ".last_lint"
 
     # Pre-initialize sandbox on the event-loop thread (signal handlers
     # can only be registered here, not inside the worker thread).
@@ -105,7 +105,7 @@ async def run_memory_service(state) -> None:
                 continue
 
             schedule = getattr(state.config, "memory_schedule", "daily at 3am")
-            if not scheduled_service_due(schedule, last_run_file):
+            if not scheduled_service_due(schedule, ingest_checkpoint_file):
                 continue
 
             cfg = state.config
@@ -126,7 +126,7 @@ async def run_memory_service(state) -> None:
                 logger.info("Memory: ingest complete")
                 await state.broadcast("memory_updated", {})
 
-                lint_last_run = _read_last_run(lint_last_run_file)
+                lint_last_run = _read_last_run(lint_checkpoint_file)
                 should_lint = lint_last_run is None or (datetime.now() - lint_last_run) >= timedelta(days=6)
                 if should_lint:
                     lint_msg = "Auditing memories…"
@@ -137,12 +137,8 @@ async def run_memory_service(state) -> None:
                         MemoryLint(logs_dir, model, api_key, subagent_model, subagent_api_key).run,
                         on_round=lint_on_round,
                     )
-                    lint_last_run_file.parent.mkdir(parents=True, exist_ok=True)
-                    lint_last_run_file.write_text(datetime.now().isoformat())
                     logger.info("Memory: lint complete")
 
-                last_run_file.parent.mkdir(parents=True, exist_ok=True)
-                last_run_file.write_text(datetime.now().isoformat())
             finally:
                 await state.broadcast_activity("memory")
 

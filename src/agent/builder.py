@@ -16,8 +16,11 @@ from sandbox_runtime import SandboxManager, SandboxRuntimeConfig
 from .agent import Agent
 from .tools import ALL_TOOLS, _bg_manager
 from .tools.compact import CompactTool
+from .tools.edit import EditTool
 from .tools.subagent import SubAgentTool
+from .tools.terminal import TerminalTool
 from .tools.todo import PlanState, PlanWriteTool, PlanUpdateTool
+from .tools.write import WriteTool
 
 # Sandbox read-deny list shared by every agent built here and by
 # ReadOnlyTerminalTool. Covers credentials plus macOS personal/app data the
@@ -133,6 +136,7 @@ def build_agent(
     """
     data_dir = str(Path(data_dir).resolve())
     write_dirs = [data_dir] + [str(Path(d).resolve()) for d in (extra_write_dirs or [])]
+    tool_write_dirs = [Path(d).resolve() for d in write_dirs] + [Path(tempfile.gettempdir()).resolve()]
     _ensure_sandbox(write_dirs)
     system_prompt = _SYSTEM_PROMPT_TEMPLATE.format(data_dir=data_dir, tmp_dir=tempfile.gettempdir())
     transcript_dir = Path(data_dir) / "transcripts"
@@ -145,6 +149,9 @@ def build_agent(
     base_tools = [
         PlanWriteTool(plan_state) if isinstance(t, PlanWriteTool)
         else PlanUpdateTool(plan_state) if isinstance(t, PlanUpdateTool)
+        else WriteTool(tool_write_dirs) if isinstance(t, WriteTool)
+        else EditTool(tool_write_dirs) if isinstance(t, EditTool)
+        else TerminalTool(write_dirs) if isinstance(t, TerminalTool)
         else t
         for t in ALL_TOOLS
     ]

@@ -33,6 +33,7 @@ class MomentCandidate:
     desired_artifact: str
     evidence: list[str]
     source_paths: list[str]
+    likely_next_need: str
     why_now: str
     user_value: str
 
@@ -52,6 +53,7 @@ class MomentCandidate:
             "desired_artifact": self.desired_artifact,
             "evidence": self.evidence,
             "source_paths": self.source_paths,
+            "likely_next_need": self.likely_next_need,
             "why_now": self.why_now,
             "user_value": self.user_value,
         }
@@ -151,6 +153,7 @@ def validate_candidate(raw: dict[str, Any]) -> MomentCandidate:
         desired_artifact=_string(raw.get("desired_artifact"), "desired_artifact"),
         evidence=_string_list(raw.get("evidence"), "evidence"),
         source_paths=_string_list(raw.get("source_paths"), "source_paths"),
+        likely_next_need=_string(raw.get("likely_next_need"), "likely_next_need"),
         why_now=_string(raw.get("why_now"), "why_now"),
         user_value=_string(raw.get("user_value"), "user_value"),
     )
@@ -199,12 +202,16 @@ def parse_promotion_result(result: str, candidates: list[MomentCandidate]) -> tu
     return promoted, rejected
 
 
-def candidates_dir(logs_path: Path) -> Path:
-    return logs_path / "moments" / "candidates"
+def discovery_state_dir(tada_path: Path) -> Path:
+    return tada_path / "_discovery"
 
 
-def write_candidates_jsonl(logs_path: Path, candidates: list[MomentCandidate]) -> Path:
-    out_dir = candidates_dir(logs_path)
+def candidates_dir(tada_path: Path) -> Path:
+    return discovery_state_dir(tada_path) / "candidates"
+
+
+def write_candidates_jsonl(tada_path: Path, candidates: list[MomentCandidate]) -> Path:
+    out_dir = candidates_dir(tada_path)
     out_dir.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     out_path = out_dir / f"{timestamp}.jsonl"
@@ -222,8 +229,8 @@ def read_candidate_jsonl(path: Path) -> list[MomentCandidate]:
     return candidates
 
 
-def latest_candidate_file(logs_path: Path) -> Path | None:
-    files = sorted(candidates_dir(logs_path).glob("*.jsonl"))
+def latest_candidate_file(tada_path: Path) -> Path | None:
+    files = sorted(candidates_dir(tada_path).glob("*.jsonl"))
     return files[-1] if files else None
 
 
@@ -250,6 +257,10 @@ def render_accepted_markdown(candidate: MomentCandidate) -> str:
         "## Desired Artifact",
         "",
         candidate.desired_artifact,
+        "",
+        "## Likely Next Need",
+        "",
+        candidate.likely_next_need,
         "",
         "## Evidence",
         "",

@@ -272,7 +272,7 @@ async def run_context_logging_service(state) -> None:
                     "TADA_BUFFER_SECONDS": str(config.buffer_seconds),
                     "TADA_COST_APP": "labeler",
                 },
-                exclude_from_serialization=["img"],
+                exclude_from_serialization=["img", "raw_events"],
             ),
         ),
         ConnectorConfig(

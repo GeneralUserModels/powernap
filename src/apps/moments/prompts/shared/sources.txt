@@ -22,3 +22,8 @@ Drilldown sources:
 Ignore internal files such as `checkpoints.jsonl`, `predictions.jsonl`, `metrics.jsonl`, `retriever*`, `raw_events*`, and other pipeline artifacts.
 
 `raw_events` are omitted from default discovery context. Inspect them only when detailed interaction mechanics are necessary.
+
+Do not dump whole JSONL rows from screen logs. When searching or sampling JSONL
+with shell tools, project only the useful fields (`timestamp`, `text`,
+`dense_caption`, `source.id`, `source.summary`, `source.screenshot_path`,
+`img_path`) instead of printing full lines.

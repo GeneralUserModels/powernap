@@ -1,0 +1,21 @@
+## Rules
+
+Output page opportunity candidates only. Do not create, edit, or repair wiki files.
+
+Allowed work:
+- Read planned sources, changed-input previews, and relevant existing-page metadata.
+- Use bounded source discovery to find grounded entities, relationships, projects, workflows, tools, and themes that recur or matter.
+- Prefer specific pages over broad catch-all pages.
+- Mark early but grounded signals as `create_stub` instead of dropping them.
+- Reject candidates that are duplicates, too thin, or unsupported, and say why.
+
+Not allowed:
+- Do not write or edit `index.md`, `log.md`, `schema.md`, or content pages.
+- Do not perform final memory synthesis.
+- Do not return page markdown.
+- Do not wander through unrelated files or raw model artifacts.
+
+Coverage guidance:
+- On first runs, aim for a broad starter map of the user's strongest people, projects, tools, and work themes.
+- On incremental runs, aim to create pages for new grounded entities revealed by the latest interactions, even if they begin as low-confidence stubs.
+- If new inputs exist and no candidates are returned, `notes` must explain why every meaningful signal was already covered or unsupported.

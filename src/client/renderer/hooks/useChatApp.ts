@@ -21,6 +21,10 @@ import { useAppContext } from "../context/AppContext";
 // renderer state: new sessions always use the backend's configured agent_model.
 const STORAGE_KEY_EFFORT = "chat.draftEffort";
 
+function isChatEffort(value: string | null): value is ChatSessionMeta["effort"] {
+  return value === "low" || value === "medium" || value === "high";
+}
+
 export function useChatApp() {
   const { state: appState, dispatch } = useAppContext();
   const [sessions, setSessions] = useState<ChatSessionMeta[]>([]);
@@ -35,8 +39,11 @@ export function useChatApp() {
   // only. It is not stored locally and is not sent during session creation.
   const [draftModel, setDraftModel] = useState<string>("");
   // Draft effort is still user-selectable and can survive app quit.
-  const [draftEffort, setDraftEffort] = useState<string>(
-    () => localStorage.getItem(STORAGE_KEY_EFFORT) ?? "medium",
+  const [draftEffort, setDraftEffort] = useState<ChatSessionMeta["effort"]>(
+    () => {
+      const stored = localStorage.getItem(STORAGE_KEY_EFFORT);
+      return isChatEffort(stored) ? stored : "medium";
+    },
   );
 
   // Sync mirror of activeId for SSE handlers running outside the render cycle.
@@ -123,6 +130,7 @@ export function useChatApp() {
 
   const setEffort = useCallback(
     async (effort: string) => {
+      if (!isChatEffort(effort)) return;
       // Always update the draft so the next "+ New chat" remembers this pick.
       setDraftEffort(effort);
       if (activeId && activeMeta) {

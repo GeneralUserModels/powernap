@@ -33,13 +33,22 @@ let serverProc: ChildProcess | null = null;
 let logStream: fs.WriteStream | null = null;
 let serverReady = false;
 
-const LOG_ROTATE_INTERVAL_MS = 4 * 60 * 60 * 1000;
+const LOG_RETENTION_MS = 24 * 60 * 60 * 1000;
 
-function openLogStream(logPath: string, banner: string): void {
+function isLogOlderThanRetention(logPath: string): boolean {
+  try {
+    const { mtimeMs } = fs.statSync(logPath);
+    return Date.now() - mtimeMs >= LOG_RETENTION_MS;
+  } catch {
+    return false;
+  }
+}
+
+function openLogStream(logPath: string, banner: string, truncate = false): void {
   try { logStream?.end(); } catch {}
-  // "w" truncates on open, so the file resets every rotation/launch and can't
-  // grow indefinitely on a long-running process.
-  logStream = fs.createWriteStream(logPath, { flags: "w" });
+  // Append across launches so a restart after a failure doesn't erase the
+  // useful evidence. Truncate on the daily rotation boundary to cap growth.
+  logStream = fs.createWriteStream(logPath, { flags: truncate ? "w" : "a" });
   logStream.write(`\n=== ${banner} ${new Date().toISOString()} pid=${process.pid} packaged=${!isDev()} ===\n`);
 }
 
@@ -47,7 +56,7 @@ function initFileLogging(): void {
   const dir = getLogDir();
   fs.mkdirSync(dir, { recursive: true });
   const logPath = path.join(dir, "electron.log");
-  openLogStream(logPath, "launch");
+  openLogStream(logPath, "launch", isLogOlderThanRetention(logPath));
 
   const tee = (orig: NodeJS.WriteStream["write"], stream: NodeJS.WriteStream) =>
     ((chunk: string | Uint8Array, ...rest: unknown[]) => {
@@ -65,7 +74,7 @@ function initFileLogging(): void {
     console.error("[unhandledRejection]", reason);
   });
 
-  setInterval(() => openLogStream(logPath, "rotate"), LOG_ROTATE_INTERVAL_MS).unref();
+  setInterval(() => openLogStream(logPath, "rotate", true), LOG_RETENTION_MS).unref();
 }
 
 // ── Config seeding ───────────────────────────────────────────
@@ -566,4 +575,3 @@ app.on("activate", () => {
     dashboardWindow.show();
   }
 });
-

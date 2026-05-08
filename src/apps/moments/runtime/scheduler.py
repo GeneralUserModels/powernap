@@ -11,8 +11,9 @@ from datetime import datetime, time, timedelta, timezone
 from pathlib import Path
 
 from apps.moments.runtime.execute import run as execute_moment, _parse_frontmatter as parse_frontmatter
-from apps.moments.core.paths import list_task_files, migrate_moments_to_cadence
+from apps.moments.core.paths import list_task_files
 from apps.moments.core.state import clear_pending_update, load_state
+from apps.moments.core.incremental import DEFAULT_MISSING_CHECKPOINT_AGE
 from server.feature_flags import is_enabled
 
 logger = logging.getLogger(__name__)
@@ -88,7 +89,12 @@ def _next_run_time(schedule: str) -> datetime | None:
 
 
 def load_run_history(results_dir: Path) -> dict[str, float]:
-    """Load last successful run timestamp per slug from _runs.jsonl."""
+    """Load last completed run timestamp per slug from _runs.jsonl.
+
+    Failed attempts count as completed scheduler attempts. Otherwise a broken
+    one-shot or scheduled moment gets re-queued every scan until it happens to
+    succeed, which can leave Tada generation effectively running forever.
+    """
     runs_file = results_dir / "_runs.jsonl"
     history: dict[str, float] = {}
     if not runs_file.exists():
@@ -97,7 +103,7 @@ def load_run_history(results_dir: Path) -> dict[str, float]:
         if not line.strip():
             continue
         entry = json.loads(line)
-        if entry.get("status") == "success":
+        if entry.get("status") in {"success", "failed"}:
             history[entry["slug"]] = entry["completed_at"]
     return history
 
@@ -140,14 +146,14 @@ def is_due(schedule: str, cadence: str, last_run: datetime | None) -> bool:
 def scheduled_service_due(schedule: str, last_run_path: Path) -> bool:
     """Return whether a background scheduled service should run on this poll.
 
-    A missing checkpoint means first install/startup, so seed it to now and wait
-    for the next scheduled occurrence. After that, normal catch-up applies.
+    A missing checkpoint means first install/startup, so seed it to 24 hours
+    ago and let normal catch-up decide whether the service is due.
     """
     last_run = _read_datetime(last_run_path)
     if last_run is None:
         last_run_path.parent.mkdir(parents=True, exist_ok=True)
-        last_run_path.write_text(datetime.now().isoformat())
-        return False
+        last_run = datetime.now() - DEFAULT_MISSING_CHECKPOINT_AGE
+        last_run_path.write_text(last_run.isoformat())
     return is_due(schedule, "scheduled", last_run)
 
 
@@ -246,8 +252,10 @@ async def _execute_one_moment(
         async with state.moments_runs_lock:
             save_run(results_dir, slug, started_at, completed_at, "success" if success else "failed")
 
-        if success:
+        if slug_state.get("pending_update"):
             clear_pending_update(tada_dir, slug)
+
+        if success:
             meta_path = Path(output_dir) / "meta.json"
             meta = json.loads(meta_path.read_text()) if meta_path.exists() else {}
             result_dir = Path(output_dir)
@@ -286,7 +294,7 @@ async def run_moments_scheduler(state) -> None:
     from agent.builder import _ensure_sandbox_async
     logs_dir = str(Path(state.config.log_dir).resolve())
     tada_dir = str(Path(state.config.tada_dir).resolve())
-    await _ensure_sandbox_async([logs_dir, tada_dir])
+    await _ensure_sandbox_async([tada_dir])
 
     while True:
         try:
@@ -304,7 +312,6 @@ async def run_moments_scheduler(state) -> None:
             tada_dir = Path(state.config.tada_dir).resolve()
             if not tada_dir.exists():
                 continue
-            migrate_moments_to_cadence(tada_dir)
 
             results_dir = tada_dir / "results"
             results_dir.mkdir(parents=True, exist_ok=True)

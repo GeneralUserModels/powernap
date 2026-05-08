@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from .base_tool import BaseTool
+from .sanitize import sanitize_tool_output
 
 
 class ReadTool(BaseTool):
@@ -29,6 +30,6 @@ class ReadTool(BaseTool):
             lines = path.read_text().splitlines()
             if limit and limit < len(lines):
                 lines = lines[:limit] + [f"... ({len(lines) - limit} more)"]
-            return "\n".join(lines)[:10000]
+            return sanitize_tool_output("\n".join(lines))[:10000]
         except Exception as e:
             return f"Error: {e}"

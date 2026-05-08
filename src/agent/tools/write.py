@@ -1,10 +1,10 @@
-from pathlib import Path
-
 from .base_tool import BaseTool
+from .sandbox_paths import assert_write_allowed, resolve_path
 
 
 class WriteTool(BaseTool):
-    def __init__(self):
+    def __init__(self, allowed_paths=None):
+        self.allowed_paths = allowed_paths
         super().__init__("write_file", "Write content to file.",
             {
                 "type": "object",
@@ -23,8 +23,8 @@ class WriteTool(BaseTool):
         )
 
     def run(self, path: str, content: str):
-        workdir = Path.cwd()
-        resolved = (workdir / path).resolve()
+        resolved = resolve_path(path)
+        assert_write_allowed(resolved, self.allowed_paths)
         resolved.parent.mkdir(parents=True, exist_ok=True)
         resolved.write_text(content)
         return f"Wrote {len(content)} bytes to {path}"

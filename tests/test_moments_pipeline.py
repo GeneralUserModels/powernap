@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import json
-import re
-import shutil
 import sys
 import tempfile
 import unittest
-from datetime import datetime
+import asyncio
+from datetime import datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from pydantic import ValidationError
@@ -28,9 +28,9 @@ from apps.moments.core.candidates import (
     validate_candidate,
     write_candidates_jsonl,
 )
-from apps.moments.core.paths import migrate_moments_to_cadence
+from apps.moments.api import routes as moments_routes
 from apps.moments.runtime import execute
-from apps.moments.runtime.scheduler import scheduled_service_due, should_run
+from apps.moments.runtime.scheduler import load_run_history, scheduled_service_due, should_run
 from apps.moments.schemas.structured import DraftActionPayload
 
 
@@ -50,6 +50,7 @@ def _candidate(**overrides):
         "desired_artifact": "A ranked feed of papers.",
         "evidence": ["memory/index.md mentions research"],
         "source_paths": ["memory/index.md"],
+        "likely_next_need": "The user will need to keep up with new research without manually scanning sources.",
         "why_now": "The user is actively researching.",
         "user_value": "Saves triage time.",
     }
@@ -59,6 +60,7 @@ def _candidate(**overrides):
 
 def _idea(**overrides):
     base = {
+        "likely_next_need": "The user will need to keep up with new research without manually scanning sources.",
         "title": "Paper Digest",
         "topic_hint": "research",
         "artifact": "A ranked feed of papers.",
@@ -113,9 +115,8 @@ class _FakeToolAgent:
 
 
 class _FakeExecuteAgent:
-    def __init__(self, output_dir: Path, stage: str, test_case: unittest.TestCase):
+    def __init__(self, output_dir: Path, test_case: unittest.TestCase):
         self.output_dir = output_dir
-        self.stage = stage
         self.test_case = test_case
         self.max_rounds = None
         self.warning_round = None
@@ -125,47 +126,15 @@ class _FakeExecuteAgent:
     def run(self, messages, **kwargs):
         self.messages.append(messages)
         prompt = messages[0]["content"]
-        if self.stage == "research":
-            self.test_case.assertIn("/research", prompt)
-            research_dir = self.output_dir / "research"
-            research_dir.mkdir(parents=True)
-            (research_dir / "evidence.md").write_text("# Evidence\n\nA cited source.\n")
-            (research_dir / "synthesis.md").write_text("# Synthesis\n\nUseful researched findings.\n")
-            return "research complete"
-
+        self.test_case.assertIn("/research", prompt)
+        self.test_case.assertIn("Include an `index.md` page", prompt)
+        self.test_case.assertIn("Use markdown links liberally", prompt)
+        self.test_case.assertIn("Do not build a website or app", prompt)
         research_dir = self.output_dir / "research"
-        self.test_case.assertGreaterEqual(len(list(research_dir.glob("*.md"))), 2)
-        self.test_case.assertFalse((self.output_dir / "index.html").exists())
-        self.test_case.assertFalse((self.output_dir / "styles.css").exists())
-        self.test_case.assertFalse((self.output_dir / "app.js").exists())
-        self.test_case.assertTrue((self.output_dir / "base.css").exists())
-        self.test_case.assertTrue((self.output_dir / "components.js").exists())
-        template_kit_dir = self.output_dir / "templates"
-        for template_name in ("blank", "dashboard", "feed", "report", "table", "shared"):
-            self.test_case.assertTrue((template_kit_dir / template_name).is_dir(), template_name)
-            self.test_case.assertTrue((template_kit_dir / template_name / "README.md").exists(), template_name)
-        self.test_case.assertTrue((template_kit_dir / "feed" / "app.js").exists())
-        self.test_case.assertTrue((template_kit_dir / "dashboard" / "index.html").exists())
-        self.test_case.assertIn(str(research_dir), prompt)
-        self.test_case.assertIn(str(template_kit_dir), prompt)
-        self.test_case.assertNotIn("{template_kit_dir}", prompt)
-        self.test_case.assertIn("template kit has been copied", prompt)
-        self.test_case.assertIn("multiple views, tabs, filters", prompt)
-        self.test_case.assertIn("copying and pasting directly", prompt)
-        self.test_case.assertIn("Every substantive research file needs a visible home", prompt)
-        self.test_case.assertIn("Do not invent a separate visual system", prompt)
-        self.test_case.assertIn("Do not introduce blue/purple fallback accents", prompt)
-        shutil.copyfile(template_kit_dir / "feed" / "index.html", self.output_dir / "index.html")
-        shutil.copyfile(template_kit_dir / "feed" / "styles.css", self.output_dir / "styles.css")
-        shutil.copyfile(template_kit_dir / "feed" / "app.js", self.output_dir / "app.js")
-        (self.output_dir / "meta.json").write_text(json.dumps({
-            "title": "Strategy Brief",
-            "description": "Built from template kit.",
-            "completed_at": "2026-05-06T00:00:00Z",
-            "cadence": "once",
-            "schedule": "",
-        }))
-        return "build complete"
+        research_dir.mkdir(parents=True)
+        (research_dir / "evidence.md").write_text("# Evidence\n\nA cited [source](https://example.com).\n")
+        (research_dir / "synthesis.md").write_text("# Synthesis\n\nUseful researched findings.\n")
+        return "research complete"
 
 
 class _FakeMissingResearchAgent:
@@ -191,12 +160,22 @@ def _filtered_row(timestamp: datetime, source_name: str, text: str, **extra):
     return json.dumps(row)
 
 
+def _discovery_state(root: Path) -> Path:
+    return root / "logs-tada" / "_discovery"
+
+
+def _candidate_files(root: Path) -> list[Path]:
+    return sorted((_discovery_state(root) / "candidates").glob("*.jsonl"))
+
+
 class MomentsPipelineTests(unittest.TestCase):
-    def test_scheduled_services_wait_on_first_launch_but_catch_up_after_schedule(self):
+    def test_scheduled_services_seed_missing_pipeline_checkpoint_to_24_hour_catchup(self):
         with tempfile.TemporaryDirectory() as d:
-            last_run = Path(d) / ".discovery_last_run"
-            self.assertFalse(scheduled_service_due("daily at 2am", last_run))
+            last_run = Path(d) / ".last_discovery"
+            self.assertTrue(scheduled_service_due("daily at 2am", last_run))
             self.assertTrue(last_run.exists())
+            seeded = datetime.fromisoformat(last_run.read_text().strip())
+            self.assertTrue(datetime.now() - timedelta(hours=25) <= seeded <= datetime.now() - timedelta(hours=23))
             last_run.write_text(datetime(2000, 1, 1).isoformat())
             self.assertTrue(scheduled_service_due("daily at 2am", last_run))
 
@@ -207,6 +186,24 @@ class MomentsPipelineTests(unittest.TestCase):
             validate_candidate(_candidate(cadence="scheduled", schedule=""))
         with self.assertRaises(CandidateError):
             validate_candidate(_candidate(cadence="trigger", trigger=""))
+
+    def test_structured_candidate_payload_requires_cadence_fields(self):
+        with self.assertRaises(ValidationError):
+            DraftActionPayload.model_validate({
+                "upserts": [_candidate(cadence="scheduled", schedule="")],
+                "rejected": [],
+                "remove": [],
+                "notes": "",
+            })
+        with self.assertRaises(ValidationError):
+            raw = _candidate(cadence="scheduled")
+            raw.pop("schedule")
+            DraftActionPayload.model_validate({
+                "upserts": [raw],
+                "rejected": [],
+                "remove": [],
+                "notes": "",
+            })
 
     def test_markdown_render_uses_cadence_frontmatter(self):
         candidate = validate_candidate(_candidate(cadence="scheduled", schedule="Monday at 9am"))
@@ -224,74 +221,97 @@ class MomentsPipelineTests(unittest.TestCase):
         self.assertEqual([c.slug for c in promoted], ["paper-digest"])
         self.assertEqual(rejected, [])
 
-    def test_migration_rewrites_frequency_to_cadence_and_state(self):
-        with tempfile.TemporaryDirectory() as d:
-            tada = Path(d) / "logs-tada"
-            topic = tada / "research"
-            topic.mkdir(parents=True)
-            (topic / "daily.md").write_text(
-                "---\n"
-                "title: Daily\n"
-                "description: Desc\n"
-                "frequency: daily\n"
-                "schedule: at 8am\n"
-                "confidence: 0.8\n"
-                "usefulness: 8\n"
-                "---\n\nBody\n"
-            )
-            state = tada / "results" / "_moment_state.json"
-            state.parent.mkdir(parents=True)
-            state.write_text(json.dumps({"daily": {"frequency_override": "weekly"}}))
-
-            changed = migrate_moments_to_cadence(tada)
-
-            self.assertGreaterEqual(changed, 2)
-            text = (topic / "daily.md").read_text()
-            self.assertIn("cadence: scheduled", text)
-            self.assertNotIn("frequency:", text)
-            self.assertEqual(json.loads(state.read_text())["daily"]["cadence_override"], "scheduled")
-
     def test_scheduler_respects_cadence(self):
         self.assertTrue(should_run("once", "once", "", {}))
+        self.assertFalse(should_run("once", "once", "", {"once": datetime.now().timestamp()}))
         self.assertFalse(should_run("trigger", "trigger", "", {}))
         self.assertTrue(should_run("daily", "scheduled", "daily at 12:01am", {}))
 
-    def test_shared_components_only_export_pn_global(self):
-        components_js = (execute.TEMPLATES_DIR / "shared" / "components.js").read_text()
+    def test_run_history_counts_failed_attempts(self):
+        with tempfile.TemporaryDirectory() as d:
+            results = Path(d)
+            (results / "_runs.jsonl").write_text(
+                json.dumps({
+                    "slug": "broken-once",
+                    "started_at": 100.0,
+                    "completed_at": 120.0,
+                    "status": "failed",
+                }) + "\n"
+            )
 
-        self.assertIn("(function() {", components_js)
-        self.assertIn("window.PN = {", components_js)
-        self.assertTrue(components_js.rstrip().endswith("})();"))
+            self.assertEqual(load_run_history(results), {"broken-once": 120.0})
 
-    def test_template_apps_define_local_react_helpers(self):
-        for app_js in sorted(execute.TEMPLATES_DIR.glob("*/app.js")):
-            text = app_js.read_text()
-            self.assertIn("const h = React.createElement", text, f"{app_js} should define local h helper")
+    def test_research_pages_are_ordered_and_titled(self):
+        with tempfile.TemporaryDirectory() as d:
+            result_dir = Path(d)
+            research = result_dir / "research"
+            research.mkdir()
+            (research / "z-notes.md").write_text("# Zebra Notes\n\nBody\n")
+            (research / "overview.md").write_text("---\ntitle: Brief Overview\n---\n\nBody\n")
+            (research / "index.md").write_text("# Start Here\n\nBody\n")
 
-    def test_shared_component_classes_have_base_styles(self):
-        components_js = (execute.TEMPLATES_DIR / "shared" / "components.js").read_text()
-        base_css = (execute.TEMPLATES_DIR / "shared" / "base.css").read_text()
+            pages = moments_routes._list_research_pages(result_dir)
 
-        class_tokens = set()
-        for match in re.finditer(r'className:\s*"([^"]+)"', components_js):
-            class_tokens.update(token for token in match.group(1).split() if token)
+            self.assertEqual([p.name for p in pages], ["index.md", "overview.md", "z-notes.md"])
+            self.assertEqual(moments_routes._page_meta(pages[1], research)["title"], "Brief Overview")
 
-        missing = sorted(token for token in class_tokens if f".{token}" not in base_css)
-        self.assertFalse(missing, f"Shared component classes missing base.css styles: {missing}")
+    def test_resolve_research_page_rejects_traversal(self):
+        with tempfile.TemporaryDirectory() as d:
+            tada = Path(d) / "logs-tada"
+            research = tada / "results" / "brief" / "research"
+            research.mkdir(parents=True)
+            safe = research / "safe.md"
+            safe.write_text("# Safe\n")
+            (tada / "results" / "brief" / "outside.md").write_text("# Outside\n")
 
-    def test_shared_interface_does_not_tell_builder_to_write_runtime_assets(self):
-        interface_text = (execute._PROMPTS / "shared" / "interface.txt").read_text()
-        generated_files = interface_text.split("Use the provided templates", 1)[0]
+            self.assertEqual(moments_routes._resolve_research_page(tada, "brief", "safe.md"), safe.resolve())
+            self.assertIsNone(moments_routes._resolve_research_page(tada, "brief", "../outside.md"))
+            self.assertIsNone(moments_routes._resolve_research_page(tada, "brief", "/etc/passwd"))
 
-        self.assertIn("Create or update these generated files:", generated_files)
-        self.assertIn("`index.html`", generated_files)
-        self.assertIn("`styles.css`", generated_files)
-        self.assertIn("`app.js`", generated_files)
-        self.assertIn("`meta.json`", generated_files)
-        self.assertNotIn("`base.css`", generated_files)
-        self.assertNotIn("`components.js`", generated_files)
+    def test_list_results_includes_markdown_backed_results(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            tada = root / "logs-tada"
+            task_dir = tada / "research"
+            task_dir.mkdir(parents=True)
+            (task_dir / "strategy-brief.md").write_text(
+                "---\n"
+                "title: Strategy Brief\n"
+                "description: Prepare a concise interview briefing.\n"
+                "cadence: once\n"
+                "confidence: 0.80\n"
+                "usefulness: 8\n"
+                "---\n\nBody\n"
+            )
+            result_dir = tada / "results" / "strategy-brief"
+            research = result_dir / "research"
+            research.mkdir(parents=True)
+            (research / "evidence.md").write_text("# Evidence\n")
+            (research / "synthesis.md").write_text("# Synthesis\n")
+            (result_dir / "meta.json").write_text(json.dumps({
+                "title": "Strategy Brief",
+                "description": "Markdown result.",
+                "completed_at": "2026-05-06T00:00:00Z",
+                "cadence": "once",
+                "schedule": "",
+            }))
+            request = SimpleNamespace(
+                app=SimpleNamespace(
+                    state=SimpleNamespace(
+                        server=SimpleNamespace(
+                            config=SimpleNamespace(tada_dir=str(tada)),
+                        ),
+                    ),
+                ),
+            )
 
-    def test_execute_splits_research_and_template_bound_build(self):
+            results = asyncio.run(moments_routes.list_results(request))
+
+            self.assertEqual(len(results), 1)
+            self.assertEqual(results[0]["slug"], "strategy-brief")
+            self.assertEqual(results[0]["page_count"], 2)
+
+    def test_execute_generates_markdown_only_result(self):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)
             logs = root / "logs"
@@ -317,19 +337,24 @@ class MomentsPipelineTests(unittest.TestCase):
             )
             output_dir = tada / "results" / "strategy-brief"
             output_dir.mkdir(parents=True)
-            research_agent = _FakeExecuteAgent(output_dir, "research", self)
-            build_agent = _FakeExecuteAgent(output_dir, "build", self)
+            research_agent = _FakeExecuteAgent(output_dir, self)
 
-            with patch.object(execute, "build_agent", side_effect=[(research_agent, None), (build_agent, None)]), \
-                 patch.object(execute, "verify_and_refine", return_value=True):
+            with patch.object(execute, "build_agent", return_value=(research_agent, None)):
                 success = execute.run(str(task_path), str(output_dir), str(logs), model="fake")
 
             self.assertTrue(success)
             self.assertGreaterEqual(len(list((output_dir / "research").glob("*.md"))), 2)
+            index = output_dir / "research" / "index.md"
+            self.assertTrue(index.exists())
+            self.assertIn("[Evidence](evidence.md)", index.read_text())
+            self.assertTrue((output_dir / "meta.json").exists())
+            self.assertFalse((output_dir / "index.html").exists())
+            self.assertFalse((output_dir / "styles.css").exists())
+            self.assertFalse((output_dir / "app.js").exists())
+            self.assertFalse((output_dir / "templates").exists())
             self.assertEqual(len(research_agent.messages), 1)
-            self.assertEqual(len(build_agent.messages), 1)
 
-    def test_execute_fails_before_build_when_research_missing(self):
+    def test_execute_fails_when_research_missing(self):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)
             logs = root / "logs"
@@ -351,17 +376,14 @@ class MomentsPipelineTests(unittest.TestCase):
             )
             output_dir = tada / "results" / "strategy-brief"
             research_agent = _FakeMissingResearchAgent()
-            build_agent = _FakeMissingResearchAgent()
 
-            with patch.object(execute, "build_agent", side_effect=[(research_agent, None), (build_agent, None)]), \
-                 patch.object(execute, "verify_and_refine", return_value=True):
+            with patch.object(execute, "build_agent", return_value=(research_agent, None)):
                 success = execute.run(str(task_path), str(output_dir), str(logs), model="fake")
 
             self.assertFalse(success)
             self.assertFalse(output_dir.exists())
             self.assertEqual(len(research_agent.messages), 2)
             self.assertIn("research folder is not ready", research_agent.messages[1][0]["content"])
-            self.assertEqual(len(build_agent.messages), 0)
 
     def test_discover_and_promote_with_fake_agents(self):
         with tempfile.TemporaryDirectory() as d:
@@ -370,8 +392,9 @@ class MomentsPipelineTests(unittest.TestCase):
             logs.mkdir()
             screen = logs / "screen"
             screen.mkdir()
+            recent = datetime.now() - timedelta(hours=23)
             (screen / "filtered.jsonl").write_text(
-                _filtered_row(datetime(2025, 1, 1, 0, 0), "screen", "reading papers") + "\n"
+                _filtered_row(recent, "screen", "reading papers") + "\n"
             )
             draft_state_json = "```json\n" + json.dumps({"upserts": [_candidate()], "rejected": [], "remove": [], "notes": ""}) + "\n```"
             reconcile_json = "```json\n" + json.dumps({"candidates": [_candidate()], "updates": [], "rejected": [], "notes": ""}) + "\n```"
@@ -389,9 +412,9 @@ class MomentsPipelineTests(unittest.TestCase):
             self.assertIn("(no drafts yet)", discover_prompt)
             self.assertIn("Idea Cards From This Chunk", discover_structured.instructions[0])
             self.assertIn("Draft Candidates From Discovery", discover_structured.instructions[1])
-            candidate_files = sorted((logs / "moments" / "candidates").glob("*.jsonl"))
+            candidate_files = _candidate_files(root)
             self.assertEqual(len(candidate_files), 1)
-            self.assertTrue((logs / "moments" / ".last_discovery").exists())
+            self.assertTrue((_discovery_state(root) / ".last_discovery").exists())
 
             with patch.object(promote, "structured_completion", side_effect=promote_structured):
                 promote.run(str(logs), model="fake")
@@ -399,30 +422,36 @@ class MomentsPipelineTests(unittest.TestCase):
             self.assertTrue(accepted.exists())
             self.assertIn("cadence: scheduled", accepted.read_text())
             self.assertIn("paper-digest", promote_structured.instructions[0])
+            self.assertIn("likely_next_need", promote_structured.instructions[0])
+            self.assertIn("advances that future need", promote_structured.instructions[0])
 
-    def test_invalid_discovery_does_not_write_checkpoint(self):
+    def test_invalid_discovery_keeps_seed_checkpoint(self):
         with tempfile.TemporaryDirectory() as d:
             logs = Path(d) / "logs"
             screen = logs / "screen"
             screen.mkdir(parents=True)
+            recent = datetime.now() - timedelta(hours=23)
             (screen / "filtered.jsonl").write_text(
-                _filtered_row(datetime(2025, 1, 1, 0, 0), "screen", "reading papers") + "\n"
+                _filtered_row(recent, "screen", "reading papers") + "\n"
             )
             structured = _FakeStructuredCompletion("not json")
             with patch.object(discover, "build_agent", return_value=(_FakeToolAgent("not json"), None)), \
                  patch.object(discover, "structured_completion", side_effect=structured):
                 with self.assertRaises(CandidateError):
                     discover.run(str(logs), model="fake")
-            self.assertFalse((logs / "moments" / ".last_discovery").exists())
+            seeded = datetime.fromisoformat((_discovery_state(Path(d)) / ".last_discovery").read_text().strip())
+            self.assertTrue(datetime.now() - timedelta(hours=25) <= seeded <= datetime.now() - timedelta(hours=23))
 
-    def test_first_discovery_uses_recent_activity_window(self):
+    def test_first_discovery_defaults_to_24_hour_activity_window(self):
         with tempfile.TemporaryDirectory() as d:
             logs = Path(d) / "logs"
             screen = logs / "screen"
             screen.mkdir(parents=True)
+            ancient = datetime.now() - timedelta(hours=25)
+            recent = datetime.now() - timedelta(hours=23)
             (screen / "filtered.jsonl").write_text(
-                _filtered_row(datetime(2025, 1, 1, 10, 0), "screen", "ancient topic") + "\n"
-                + _filtered_row(datetime(2025, 1, 3, 10, 0), "screen", "recent topic") + "\n"
+                _filtered_row(ancient, "screen", "ancient topic") + "\n"
+                + _filtered_row(recent, "screen", "recent topic") + "\n"
             )
             structured = _FakeStructuredCompletion(
                 "```json\n" + json.dumps({"upserts": [_candidate()], "rejected": [], "remove": [], "notes": ""}) + "\n```",
@@ -435,18 +464,19 @@ class MomentsPipelineTests(unittest.TestCase):
                 result = discover.run(str(logs), model="fake")
 
             discover_prompt = fake_agent.messages[0][0]["content"]
-            self.assertIn("Activity window starts after: **2025-01-02 10:00**", discover_prompt)
+            self.assertIn("Activity window starts after:", discover_prompt)
             self.assertIn("recent topic", discover_prompt)
             self.assertNotIn("ancient topic", discover_prompt)
-            self.assertIn("Activity window starts after: 2025-01-02 10:00", result)
+            self.assertIn("Activity window starts after:", result)
 
     def test_discovery_retries_malformed_json_once(self):
         with tempfile.TemporaryDirectory() as d:
             logs = Path(d) / "logs"
             screen = logs / "screen"
             screen.mkdir(parents=True)
+            recent = datetime.now() - timedelta(hours=23)
             (screen / "filtered.jsonl").write_text(
-                _filtered_row(datetime(2025, 1, 1, 0, 0), "screen", "reading papers") + "\n"
+                _filtered_row(recent, "screen", "reading papers") + "\n"
             )
             structured = _FakeStructuredCompletion(
                 StructuredOpsError("structured output validation failed"),
@@ -458,8 +488,8 @@ class MomentsPipelineTests(unittest.TestCase):
                  patch.object(discover, "structured_completion", side_effect=structured):
                 discover.run(str(logs), model="fake")
 
-            self.assertTrue((logs / "moments" / ".last_discovery").exists())
-            candidate_files = sorted((logs / "moments" / "candidates").glob("*.jsonl"))
+            self.assertTrue((_discovery_state(Path(d)) / ".last_discovery").exists())
+            candidate_files = _candidate_files(Path(d))
             self.assertEqual(len(candidate_files), 1)
 
     def test_discovery_reports_draft_compile_rejections(self):
@@ -467,8 +497,9 @@ class MomentsPipelineTests(unittest.TestCase):
             logs = Path(d) / "logs"
             screen = logs / "screen"
             screen.mkdir(parents=True)
+            recent = datetime.now() - timedelta(hours=23)
             (screen / "filtered.jsonl").write_text(
-                _filtered_row(datetime(2025, 1, 1, 0, 0), "screen", "reading papers") + "\n"
+                _filtered_row(recent, "screen", "reading papers") + "\n"
             )
             structured = _FakeStructuredCompletion(
                 "```json\n"
@@ -486,7 +517,7 @@ class MomentsPipelineTests(unittest.TestCase):
                 result = discover.run(str(logs), model="fake")
 
             self.assertIn("Rejected or merged 1 drafts", result)
-            self.assertTrue((logs / "moments" / ".last_discovery").exists())
+            self.assertTrue((_discovery_state(Path(d)) / ".last_discovery").exists())
 
     def test_structured_completion_accepts_provider_rejected_but_valid_pydantic_json(self):
         raw = json.dumps({"upserts": [_candidate()], "notes": ""})
@@ -511,7 +542,7 @@ class MomentsPipelineTests(unittest.TestCase):
             root = Path(d)
             logs = root / "logs"
             logs.mkdir()
-            write_candidates_jsonl(logs, [validate_candidate(_candidate())])
+            write_candidates_jsonl(root / "logs-tada", [validate_candidate(_candidate())])
             structured = _FakeStructuredCompletion(
                 StructuredOpsError("structured output validation failed"),
                 '```json\n{"ranked":[{"id":"paper-digest","score":9,"reason":"useful"}],"rejected":[]}\n```',
@@ -520,7 +551,7 @@ class MomentsPipelineTests(unittest.TestCase):
             with patch.object(promote, "structured_completion", side_effect=structured):
                 promote.run(str(logs), model="fake")
 
-            self.assertTrue((logs / "moments" / ".last_promotion").exists())
+            self.assertTrue((_discovery_state(root) / ".last_promotion").exists())
             accepted = root / "logs-tada" / "research" / "paper-digest.md"
             self.assertTrue(accepted.exists())
 
@@ -543,7 +574,7 @@ class MomentsPipelineTests(unittest.TestCase):
                 "---\n\nExisting body\n"
             )
             (tada / "results" / "paper-digest").mkdir(parents=True)
-            write_candidates_jsonl(logs, [
+            write_candidates_jsonl(tada, [
                 validate_candidate(
                     _candidate(
                         id="paper-digest-update",
@@ -576,7 +607,7 @@ class MomentsPipelineTests(unittest.TestCase):
             first = validate_candidate(_candidate(id="first", slug="first", title="First"))
             second = validate_candidate(_candidate(id="second", slug="second", title="Second"))
             third = validate_candidate(_candidate(id="third", slug="third", title="Third"))
-            write_candidates_jsonl(logs, [first, second, third])
+            write_candidates_jsonl(root / "logs-tada", [first, second, third])
             structured = _FakeStructuredCompletion(
                 "```json\n"
                 + json.dumps({
@@ -749,7 +780,7 @@ class MomentsPipelineTests(unittest.TestCase):
             self.assertEqual(len(compile_instructions), 2)
             self.assertEqual(len(reconcile_instructions), 1)
             self.assertTrue(any("second chunk" in instruction for instruction in compile_instructions))
-            candidate_file = sorted((logs / "moments" / "candidates").glob("*.jsonl"))[-1]
+            candidate_file = _candidate_files(Path(d))[-1]
             self.assertIn("second chunk", candidate_file.read_text())
 
     def test_reconciliation_routes_duplicate_as_update(self):
@@ -758,8 +789,9 @@ class MomentsPipelineTests(unittest.TestCase):
             logs = root / "logs"
             screen = logs / "screen"
             screen.mkdir(parents=True)
+            recent = datetime.now() - timedelta(hours=23)
             (screen / "filtered.jsonl").write_text(
-                _filtered_row(datetime(2025, 1, 1, 10, 0), "screen", "reading papers") + "\n"
+                _filtered_row(recent, "screen", "reading papers") + "\n"
             )
             tada = root / "logs-tada"
             accepted_dir = tada / "research"
@@ -795,7 +827,7 @@ class MomentsPipelineTests(unittest.TestCase):
 
             self.assertIn("research/paper-digest", structured.instructions[1])
             self.assertIn("Routed 1 candidates as updates", result)
-            candidate_file = sorted((logs / "moments" / "candidates").glob("*.jsonl"))[-1]
+            candidate_file = _candidate_files(root)[-1]
             candidate_text = candidate_file.read_text()
             self.assertIn('"slug": "paper-digest"', candidate_text)
             self.assertNotIn("new-paper-tracker", candidate_text)

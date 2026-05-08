@@ -107,6 +107,14 @@ interface MomentResult {
   thumbs: "up" | "down" | null;
   has_feedback: boolean;
   feedback_incorporated: boolean;
+  page_count: number;
+}
+
+interface MomentResultPage {
+  path: string;
+  title: string;
+  bytes: number;
+  updated_at: string;
 }
 
 interface SeekerStatus {

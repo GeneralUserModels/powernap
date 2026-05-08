@@ -1,12 +1,16 @@
 ## Rules
 
-- Think about what the user has done in the past to predict what might be helpful in the future.
+- Start by forecasting the user's likely next need from past activity, then propose moments that would advance the work before the user has to ask.
+- Prefer ideas that extend the observed activity: gather missing context, synthesize adjacent material, test alternatives, surface non-obvious implications, prepare the next step, or connect the work to the user's broader goals.
+- Prefer expansion over condensation: use the activity chunk as a seed, then propose artifacts that add new information, sharper judgment, concrete options, or next-step recommendations beyond what the user already saw.
 - Use the current draft catalog to avoid repeating the same idea and to mark possible updates, but do not perform draft-state operations yourself.
 - **IMPORTANT**: Use tools to help search for additional context if it can help.
 
 ## Tips
 
-- Create specific new draft moments liberally when they are grounded in evidence.
+- Create specific new draft moments liberally when they are grounded in evidence and point to a plausible next need.
+- Avoid ideas that merely recap the activity chunk unless the recap enables a concrete future action.
+- Avoid static inventories unless they include prioritization, implications, recommended actions, or a decision frame tied to the likely next need.
 - If accepted-moment evidence should be refreshed, return an idea with `relation_to_existing: possible_update`.
 - Prefer specific moments over generic buckets when a person, project, workflow, or recurring artifact has its own value.
 - Include evidence paths and a short reason the user would care.

@@ -18,40 +18,24 @@ Mode: `{mode}`
 
 {existing_page_metadata}
 
+## Target Page
+
+Path: `{target_page_path}`
+
+```markdown
+{target_page_markdown}
+```
+
 ## New Inputs Detected
 
 {new_inputs_list}
 
 ## Task
 
-Execute the inventory plan. Read the planned sources and existing pages. Return page operations for normal content pages with grounded facts, insight, confidence scores, and cross-links.
+Revise only `{target_page_path}` from the inventory plan and relevant evidence. The goal is a better memory page, not a terse summary.
 
-Important:
-- Read an existing page before editing it.
-- Prefer improving existing pages over creating near-duplicates.
-- Create a page when a real entity, project, person, theme, or pattern has enough evidence for a useful paragraph.
-- Create pages for newly discovered grounded entities even when inventory did not list them upfront.
-- If you add a `[[wiki-link]]` to a new entity, also create or update the target page unless an existing page or index entry already represents it.
-- If new information contradicts an existing page, update the page, lower confidence where needed, and preserve the older claim only when it remains historically useful.
+Preserve useful existing facts, structure, nuance, confidence scores, and links. Add or revise material only when it is grounded in sources you read. When evidence points toward what the user is likely to need next, encode that as useful memory rather than only describing the past.
 
-Do not write files directly. Python will apply the returned operations after validating paths and frontmatter.
+Do not write files directly. Python already knows the target path and will apply the returned full-page replacement after validating frontmatter.
 
-End with a single fenced JSON block. It must be the last thing in your final message.
-
-```json
-{{
-  "create_pages": [
-    {{
-      "path": "relative/page.md",
-      "markdown": "---\\ntitle: Page Title\\nconfidence: 0.7\\nlast_updated: YYYY-MM-DD\\n---\\n\\nPage body."
-    }}
-  ],
-  "update_pages": [
-    {{
-      "path": "existing/page.md",
-      "markdown": "---\\ntitle: Existing Page\\nconfidence: 0.8\\nlast_updated: YYYY-MM-DD\\n---\\n\\nFull replacement markdown."
-    }}
-  ],
-  "notes": "Concise summary of pages created, pages updated, and unresolved catalog/log/schema issues."
-}}
-```
+When finished, return the update-page result. The structured response schema enforces empty `create_pages`, one-item `update_pages`, `markdown`, and `notes`. Do not include a path in the returned item.

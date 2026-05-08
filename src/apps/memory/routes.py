@@ -181,6 +181,5 @@ async def get_status(request: Request):
         "exists": memory_dir.exists(),
         "last_ingest": _read_ts(memory_dir / ".last_ingest"),
         "last_lint": _read_ts(memory_dir / ".last_lint"),
-        "last_service_run": _read_ts(memory_dir / ".memory_last_run"),
         "page_count": page_count,
     }

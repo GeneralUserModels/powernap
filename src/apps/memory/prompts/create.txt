@@ -1,0 +1,37 @@
+Current date and time: **{now}**
+
+Mode: `{mode}`
+
+{create_rules}
+
+{shared_wiki_rules}
+
+{shared_source_rules}
+
+## Inventory Plan
+
+```json
+{inventory_json}
+```
+
+## Candidate Page
+
+`{candidate_title}`
+
+## Existing Content Page Metadata
+
+{existing_page_metadata}
+
+## New Inputs Detected
+
+{new_inputs_list}
+
+## Task
+
+Decide whether `{candidate_title}` deserves one new normal memory page. Read the relevant planned sources and any adjacent evidence needed to avoid a duplicate or shallow page.
+
+If it is grounded and distinct, return one `create_pages` entry with full markdown including YAML frontmatter. Do not include a path; Python will derive the page path from the candidate title. If it is not grounded enough or duplicates an existing page, return an empty `create_pages` list and explain briefly in `notes`.
+
+Do not write files directly. Python will apply the returned operation after validating frontmatter.
+
+When finished, return the create-page result. The structured response schema enforces `create_pages`, empty `update_pages`, `markdown`, and `notes`. Do not include a path in the returned item.

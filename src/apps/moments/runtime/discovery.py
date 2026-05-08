@@ -78,11 +78,15 @@ async def run_moments_discovery(state) -> None:
 
     # Signal handlers require main thread — pre-init before to_thread.
     from agent.builder import _ensure_sandbox_async
+    from apps.moments.core.candidates import discovery_state_dir
     logs_dir = str(Path(state.config.log_dir).resolve())
-    tada_dir = str(Path(state.config.tada_dir).resolve())
-    await _ensure_sandbox_async([logs_dir, tada_dir])
+    tada_path = Path(state.config.tada_dir).resolve()
+    tada_dir = str(tada_path)
+    await _ensure_sandbox_async([tada_dir])
 
-    last_run_file = Path(state.config.log_dir).resolve() / "moments" / ".discovery_last_run"
+    state_dir = discovery_state_dir(tada_path)
+    discovery_checkpoint = state_dir / ".last_discovery"
+    promotion_checkpoint = state_dir / ".last_promotion"
 
     while True:
         try:
@@ -92,7 +96,9 @@ async def run_moments_discovery(state) -> None:
                 continue
 
             schedule = getattr(state.config, "moments_discovery_schedule", "daily at 2am")
-            if not scheduled_service_due(schedule, last_run_file):
+            discovery_due = scheduled_service_due(schedule, discovery_checkpoint)
+            promotion_due = scheduled_service_due(schedule, promotion_checkpoint)
+            if not (discovery_due or promotion_due):
                 continue
 
             cfg = state.config
@@ -105,26 +111,28 @@ async def run_moments_discovery(state) -> None:
                 logger.info("Discovery: finding candidate moments")
                 await state.broadcast_activity("moments_discovery", "Discovering Tadas…")
                 try:
-                    await asyncio.to_thread(
+                    discovery_summary = await asyncio.to_thread(
                         MomentsDiscovery(logs_dir, model, api_key, subagent_model, subagent_api_key).run,
                     )
+                    logger.info("Discovery complete:\n%s", discovery_summary)
                 except Exception:
                     logger.exception("Discovery failed; skipping promotion and triggers")
                     continue
 
                 logger.info("Discovery: promoting candidates")
                 await state.broadcast_activity("moments_discovery", "Promoting Tadas…")
-                await asyncio.to_thread(
+                promotion_summary = await asyncio.to_thread(
                     TaskFilter(logs_dir, model, api_key, subagent_model, subagent_api_key).run,
                 )
+                logger.info("Promotion complete:\n%s", promotion_summary)
 
                 logger.info("Discovery: evaluating triggers")
                 await state.broadcast_activity("moments_discovery", "Checking Triggers…")
-                await asyncio.to_thread(
+                trigger_summary = await asyncio.to_thread(
                     TriggersCheck(logs_dir, model, api_key, subagent_model, subagent_api_key).run,
                 )
+                logger.info("Trigger check complete:\n%s", trigger_summary)
 
-                last_run_file.write_text(datetime.now().isoformat())
                 logger.info("Discovery pipeline complete")
             finally:
                 await state.broadcast_activity("moments_discovery")

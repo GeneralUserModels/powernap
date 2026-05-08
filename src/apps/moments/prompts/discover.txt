@@ -36,11 +36,11 @@ Activity window starts after: **{activity_since_date}**
 
 ## Task
 
-You are the creative ideation step for one chronological activity chunk. Use this chunk to propose useful moment ideas.
+You are the creative ideation step for one chronological activity chunk. Use this chunk to predict likely next needs and propose useful moment ideas that extend the user's work beyond what is already visible.
 
 Return idea cards only. Do not produce patch operations, do not maintain draft state, do not promote moments, and do not write accepted markdown files. A separate compiler step will convert your ideas into draft candidates.
 
-It is fine to be creative here, but every idea must cite evidence from the activity chunk or targeted source context.
+It is fine to be creative here, but every idea must name the likely next user need it serves, describe a concrete artifact that adds new work beyond the observed activity, and cite evidence from the activity chunk or targeted source context.
 
 For `relation_to_existing`, use:
 - `new` for a distinct new idea.
@@ -54,9 +54,10 @@ End with a single fenced JSON block. It must be the last thing in your final mes
 {{
   "ideas": [
     {{
+      "likely_next_need": "What the user will probably need next, stated as a concrete future-facing need",
       "title": "Short useful idea title",
       "topic_hint": "kebab-or-plain-topic",
-      "artifact": "Concrete artifact the executor should produce",
+      "artifact": "Concrete artifact the executor should produce to advance the next need",
       "why_useful": "Why this would save time, reduce missed information, clarify a decision, or make recurring work easier",
       "evidence": ["Evidence item with source path, line/timestamp, or other concrete pointer"],
       "source_paths": ["relative/source/path"],

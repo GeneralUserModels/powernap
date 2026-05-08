@@ -1,12 +1,9 @@
 import React, { useEffect, useState, useCallback, useMemo } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import rehypeRaw from "rehype-raw";
 import { useAppContext } from "../../context/AppContext";
 import { useMemory, WikiPage } from "../../hooks/useMemory";
 import { FeatureActivityBanner } from "../FeatureActivityBanner";
+import { MarkdownContent } from "../shared/MarkdownContent";
 import {
-  stripFrontmatter,
   parseFrontmatter,
   processWikiLinks,
   processInlineConfidence,
@@ -226,31 +223,27 @@ export function MemexView() {
           </div>
         ) : (
           <div className="memex-content-wrap glass-card">
-            <div className="memex-content">
-              <ReactMarkdown
-                remarkPlugins={[remarkGfm]}
-                rehypePlugins={[rehypeRaw]}
-                urlTransform={(url) => url}
-                components={{
-                  a: ({ href, children }) => {
-                    if (href?.startsWith("wiki:")) {
-                      return (
-                        <a
-                          className="memex-wiki-link"
-                          href="#"
-                          onClick={(e) => { e.preventDefault(); handleLinkClick(href); }}
-                        >
-                          {children}
-                        </a>
-                      );
-                    }
-                    return <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>;
-                  },
-                }}
-              >
-                {processInlineConfidence(processWikiLinks(stripFrontmatter(pageContent)))}
-              </ReactMarkdown>
-            </div>
+            <MarkdownContent
+              className="memex-content"
+              markdown={pageContent}
+              processMarkdown={(md) => processInlineConfidence(processWikiLinks(md))}
+              components={{
+                a: ({ href, children }) => {
+                  if (href?.startsWith("wiki:")) {
+                    return (
+                      <a
+                        className="memex-wiki-link"
+                        href="#"
+                        onClick={(e) => { e.preventDefault(); handleLinkClick(href); }}
+                      >
+                        {children}
+                      </a>
+                    );
+                  }
+                  return <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>;
+                },
+              }}
+            />
             {(selectedPage?.last_updated || fm.last_updated) && (
               <div className="memex-meta">
                 Last updated {selectedPage?.last_updated || fm.last_updated}

@@ -13,7 +13,7 @@ load_dotenv()
 from agent.builder import build_agent
 from apps.common.structured_ops import StructuredOpsError, extract_json_object
 from apps.moments.runtime.execute import _parse_frontmatter
-from apps.moments.core.paths import get_topic, list_active_task_files, migrate_moments_to_cadence
+from apps.moments.core.paths import get_topic, list_active_task_files
 from apps.moments.core.state import set_pending_update
 from apps.moments.schemas.structured import TriggerPayload
 
@@ -42,7 +42,6 @@ def run(
     logs_path = Path(logs_dir).resolve()
     logs_dir = str(logs_path)
     tada_dir = logs_path.parent / "logs-tada"
-    migrate_moments_to_cadence(tada_dir)
 
     triggered: list[tuple[Path, dict]] = []
     for md in list_active_task_files(tada_dir):
@@ -54,7 +53,7 @@ def run(
         return "no triggered tasks"
 
     listing = "\n".join(
-        f'- **{get_topic(md, tada_dir) or "(flat)"}/{md.stem}** — trigger: "{fm["trigger"]}"\n'
+        f'- **{get_topic(md, tada_dir) or "(top-level)"}/{md.stem}** — trigger: "{fm["trigger"]}"\n'
         f'  description: {fm.get("description", "")}'
         for md, fm in triggered
     )
@@ -71,7 +70,7 @@ def run(
     )
 
     agent, _ = build_agent(
-        model, logs_dir, extra_write_dirs=[str(tada_dir)], api_key=api_key,
+        model, str(tada_dir), api_key=api_key,
         subagent_model=subagent_model, subagent_api_key=subagent_api_key,
     )
     agent.max_rounds = 50

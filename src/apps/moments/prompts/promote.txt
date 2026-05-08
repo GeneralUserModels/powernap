@@ -24,7 +24,7 @@ Current date and time: **{now}**
 
 ## Task
 
-Rank all candidates by promotion priority. Do not call tools. Python will deterministically promote the top K ranked candidates and write the accepted markdown files.
+Rank all candidates by promotion priority, with special weight on whether `likely_next_need` is concrete and the artifact advances that future need. Do not call tools. Python will deterministically promote the top K ranked candidates and write the accepted markdown files.
 
 Use `ranked` for every candidate that is promotable, ordered from strongest to weakest. Give each ranked item an integer `score` from 1 to 10 and a short `reason`.
 
