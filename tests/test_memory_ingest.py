@@ -4,8 +4,9 @@ import json
 import sys
 import tempfile
 import unittest
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
+from threading import Lock
 from unittest.mock import patch
 
 from pydantic import ValidationError
@@ -17,6 +18,7 @@ if str(SRC) not in sys.path:
 
 from apps.memory import ingest
 from apps.memory.schemas.structured import ExistingPageUpdatePayload, FinalizePageOpsPayload, NewPageCreatePayload
+from apps.moments.core.incremental import DEFAULT_MISSING_CHECKPOINT_AGE, read_checkpoint
 from apps.moments.runtime.scheduler import scheduled_service_due
 
 
@@ -38,13 +40,35 @@ class _FakeMemoryAgent:
 
 
 class MemoryIngestTests(unittest.TestCase):
-    def test_memory_service_waits_on_first_launch_but_catches_up_after_schedule(self):
+    def test_checkpoint_reader_seeds_missing_checkpoint_to_24_hours_ago(self):
+        with tempfile.TemporaryDirectory() as d:
+            checkpoint = Path(d) / ".last_ingest"
+            before = datetime.now() - DEFAULT_MISSING_CHECKPOINT_AGE
+
+            value = read_checkpoint(checkpoint, default_age=DEFAULT_MISSING_CHECKPOINT_AGE)
+
+            after = datetime.now() - DEFAULT_MISSING_CHECKPOINT_AGE
+            self.assertIsNotNone(value)
+            assert value is not None
+            self.assertTrue(before <= value <= after)
+            self.assertEqual(read_checkpoint(checkpoint), value.replace(microsecond=0))
+
+    def test_checkpoint_reader_accepts_fractional_seconds(self):
+        with tempfile.TemporaryDirectory() as d:
+            checkpoint = Path(d) / ".last_ingest"
+            checkpoint.write_text("2026-05-06T22:43:21.335231\n")
+
+            self.assertEqual(read_checkpoint(checkpoint), datetime(2026, 5, 6, 22, 43, 21, 335231))
+
+    def test_memory_service_uses_ingest_checkpoint_for_24_hour_catchup(self):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)
-            last_run = root / ".memory_last_run"
+            last_run = root / ".last_ingest"
 
-            self.assertFalse(scheduled_service_due("daily at 3am", last_run))
+            self.assertTrue(scheduled_service_due("daily at 3am", last_run))
             self.assertTrue(last_run.exists())
+            seeded = datetime.fromisoformat(last_run.read_text().strip())
+            self.assertTrue(datetime.now() - timedelta(hours=25) <= seeded <= datetime.now() - timedelta(hours=23))
             last_run.write_text(datetime(2000, 1, 1).isoformat())
             self.assertTrue(scheduled_service_due("daily at 3am", last_run))
 
@@ -135,7 +159,7 @@ class MemoryIngestTests(unittest.TestCase):
                     self.assertEqual(kwargs.get("final_metadata_app"), "memory_finalize_pages")
                 if pass_name == "inventory":
                     return """```json
-{"mode":"first_run","sources_to_read":[],"existing_pages_to_read":[],"likely_pages_to_create":["Project"],"likely_pages_to_update":[],"backfill_sources_to_sample":[],"rationale":"test"}
+{"mode":"no_new_data","sources_to_read":[],"existing_pages_to_read":[],"likely_pages_to_create":["Project"],"likely_pages_to_update":[],"backfill_sources_to_sample":[],"rationale":"test"}
 ```"""
                 if pass_name == "create_page":
                     self.assertIn("## Candidate Page", instruction)
@@ -168,6 +192,61 @@ class MemoryIngestTests(unittest.TestCase):
             self.assertIn("## Content", result)
             self.assertIn("created project.md", result)
 
+    def test_run_emits_monotonic_aggregate_progress(self):
+        with tempfile.TemporaryDirectory() as d:
+            logs = Path(d) / "logs"
+            logs.mkdir()
+            emitted: list[tuple[int, int]] = []
+            emitted_lock = Lock()
+
+            def on_round(num_turns: int, max_turns: int) -> None:
+                with emitted_lock:
+                    emitted.append((num_turns, max_turns))
+
+            def fake_pass(pass_name, instruction, logs_dir, model, api_key, on_round, subagent_model, subagent_api_key, **kwargs):
+                if pass_name == "inventory":
+                    on_round(1, 50)
+                    on_round(25, 50)
+                    return """```json
+{"mode":"no_new_data","sources_to_read":[],"existing_pages_to_read":[],"likely_pages_to_create":["Alpha","Beta"],"likely_pages_to_update":[],"backfill_sources_to_sample":[],"rationale":"test"}
+```"""
+                if pass_name == "create_page":
+                    title = "Alpha" if "`Alpha`" in instruction else "Beta"
+                    if title == "Alpha":
+                        on_round(20, 20)
+                    else:
+                        on_round(1, 20)
+                        on_round(20, 20)
+                    return "```json\n" + json.dumps({
+                        "create_pages": [{
+                            "markdown": f"---\ntitle: {title}\nconfidence: 0.7\nlast_updated: 2026-05-03\n---\n\n{title} page. [c:0.7]\n",
+                        }],
+                        "update_pages": [],
+                        "notes": f"created {title}",
+                    }) + "\n```"
+                if pass_name == "finalize":
+                    today = datetime.now().strftime("%Y-%m-%d")
+                    on_round(1, 50)
+                    on_round(50, 50)
+                    return "```json\n" + json.dumps({
+                        "create_pages": [],
+                        "update_pages": [
+                            {"path": "index.md", "markdown": "# Memory Index\n\n- Alpha — alpha.md\n- Beta — beta.md\n"},
+                            {"path": "log.md", "markdown": f"# Memory Log\n\n## {today}\n- Created Alpha and Beta.\n"},
+                        ],
+                        "notes": "finalized",
+                    }) + "\n```"
+                raise AssertionError(pass_name)
+
+            with patch.object(ingest, "_run_agent_pass", side_effect=fake_pass):
+                ingest.run(str(logs), model="fake-model", on_round=on_round)
+
+            pcts = [num for num, max_turns in emitted if max_turns == 100]
+            self.assertEqual(pcts, sorted(pcts))
+            self.assertIn(20, pcts)
+            self.assertIn(80, pcts)
+            self.assertEqual(pcts[-1], 100)
+
     def test_run_uses_per_page_update_payload_end_to_end(self):
         with tempfile.TemporaryDirectory() as d:
             logs = Path(d) / "logs"
@@ -187,7 +266,7 @@ class MemoryIngestTests(unittest.TestCase):
             today = datetime.now().strftime("%Y-%m-%d")
             agents = [
                 _FakeMemoryAgent("""```json
-{"mode":"first_run","sources_to_read":[],"existing_pages_to_read":["project.md"],"likely_pages_to_create":[],"likely_pages_to_update":["project.md"],"backfill_sources_to_sample":[],"rationale":"test"}
+{"mode":"no_new_data","sources_to_read":[],"existing_pages_to_read":["project.md"],"likely_pages_to_create":[],"likely_pages_to_update":["project.md"],"backfill_sources_to_sample":[],"rationale":"test"}
 ```"""),
                 _FakeMemoryAgent(json.dumps({
                     "create_pages": [],
@@ -228,7 +307,7 @@ class MemoryIngestTests(unittest.TestCase):
             self.assertIn("Structured update evidence", (memory / "project.md").read_text())
             self.assertTrue((memory / ".last_ingest").exists())
 
-    def test_run_does_not_checkpoint_on_bad_inventory(self):
+    def test_run_keeps_seed_checkpoint_on_bad_inventory(self):
         with tempfile.TemporaryDirectory() as d:
             logs = Path(d) / "logs"
             logs.mkdir()
@@ -237,9 +316,12 @@ class MemoryIngestTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     ingest.run(str(logs), model="fake-model")
 
-            self.assertFalse((logs / "memory" / ".last_ingest").exists())
+            seeded = read_checkpoint(logs / "memory" / ".last_ingest")
+            self.assertIsNotNone(seeded)
+            assert seeded is not None
+            self.assertTrue(datetime.now() - timedelta(hours=25) <= seeded <= datetime.now() - timedelta(hours=23))
 
-    def test_run_does_not_checkpoint_when_final_validation_fails(self):
+    def test_run_keeps_seed_checkpoint_when_final_validation_fails(self):
         with tempfile.TemporaryDirectory() as d:
             logs = Path(d) / "logs"
             logs.mkdir()
@@ -247,7 +329,7 @@ class MemoryIngestTests(unittest.TestCase):
             def fake_pass(pass_name, instruction, logs_dir, model, api_key, on_round, subagent_model, subagent_api_key, **kwargs):
                 if pass_name == "inventory":
                     return """```json
-{"mode":"first_run","sources_to_read":[],"existing_pages_to_read":[],"likely_pages_to_create":["Project"],"likely_pages_to_update":[],"backfill_sources_to_sample":[],"rationale":"test"}
+{"mode":"no_new_data","sources_to_read":[],"existing_pages_to_read":[],"likely_pages_to_create":["Project"],"likely_pages_to_update":[],"backfill_sources_to_sample":[],"rationale":"test"}
 ```"""
                 if pass_name == "create_page":
                     return "```json\n" + json.dumps({
@@ -263,7 +345,10 @@ class MemoryIngestTests(unittest.TestCase):
                 with self.assertRaises(RuntimeError):
                     ingest.run(str(logs), model="fake-model")
 
-            self.assertFalse((logs / "memory" / ".last_ingest").exists())
+            seeded = read_checkpoint(logs / "memory" / ".last_ingest")
+            self.assertIsNotNone(seeded)
+            assert seeded is not None
+            self.assertTrue(datetime.now() - timedelta(hours=25) <= seeded <= datetime.now() - timedelta(hours=23))
 
     def test_validation_checks_all_memory_pages_for_index_entries(self):
         with tempfile.TemporaryDirectory() as d:

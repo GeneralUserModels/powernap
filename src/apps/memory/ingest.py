@@ -10,7 +10,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from threading import Lock
+from typing import Any, Callable
 
 from dotenv import load_dotenv
 
@@ -20,7 +21,7 @@ from agent.builder import build_agent
 from apps.common.activity_streams import DEFAULT_FILTERED_STREAM_SOURCES
 from apps.common.structured_ops import StructuredOpsError, extract_json_object, require_list, require_string, safe_rel_path
 from apps.memory.schemas.structured import ExistingPageUpdatePayload, FinalizePageOpsPayload, NewPageCreatePayload
-from apps.moments.core.incremental import read_checkpoint, write_checkpoint
+from apps.moments.core.incremental import DEFAULT_MISSING_CHECKPOINT_AGE, read_checkpoint, write_checkpoint
 
 
 _PROMPTS = Path(__file__).parent / "prompts"
@@ -82,6 +83,51 @@ class PageAgentTask:
     require_update_exists: bool = False
     expected_update_path: str | None = None
     default_create_path: str | None = None
+
+
+class MemoryIngestProgress:
+    """Map nested memory-agent rounds into one monotonic 0-100 progress signal."""
+
+    def __init__(self, on_round: Callable[[int, int], None] | None):
+        self._on_round = on_round
+        self._lock = Lock()
+        self._last_pct = -1
+
+    def emit(self, pct: float) -> None:
+        if self._on_round is None:
+            return
+        next_pct = min(100, max(0, round(pct)))
+        with self._lock:
+            if next_pct <= self._last_pct:
+                return
+            self._last_pct = next_pct
+            self._on_round(next_pct, 100)
+
+    def phase_callback(self, start_pct: float, span_pct: float) -> Callable[[int, int], None]:
+        def _callback(num_turns: int, max_turns: int) -> None:
+            denom = max(1, max_turns)
+            fraction = min(1.0, max(0.0, num_turns / denom))
+            self.emit(start_pct + span_pct * fraction)
+
+        return _callback
+
+    def page_callbacks(self, count: int, start_pct: float, span_pct: float) -> list[Callable[[int, int], None]]:
+        if count <= 0:
+            return []
+        task_progress = [0.0] * count
+
+        def _make_callback(idx: int) -> Callable[[int, int], None]:
+            def _callback(num_turns: int, max_turns: int) -> None:
+                denom = max(1, max_turns)
+                fraction = min(1.0, max(0.0, num_turns / denom))
+                with self._lock:
+                    task_progress[idx] = max(task_progress[idx], fraction)
+                    aggregate = sum(task_progress) / count
+                self.emit(start_pct + span_pct * aggregate)
+
+            return _callback
+
+        return [_make_callback(idx) for idx in range(count)]
 
 
 def _modified_sources(logs_dir: str, since: datetime | None) -> list[str]:
@@ -724,6 +770,7 @@ def _run_page_agent_tasks(
     on_round,
     subagent_model: str | None,
     subagent_api_key: str | None,
+    page_on_rounds: list[Callable[[int, int], None]] | None = None,
 ) -> tuple[list[str], dict[str, list[dict[str, str]]], str]:
     if not tasks:
         return [], {"create_pages": [], "update_pages": []}, ""
@@ -739,7 +786,7 @@ def _run_page_agent_tasks(
                 logs_dir=logs_dir,
                 model=model,
                 api_key=api_key,
-                on_round=on_round,
+                on_round=page_on_rounds[idx] if page_on_rounds else on_round,
                 subagent_model=subagent_model,
                 subagent_api_key=subagent_api_key,
                 final_response_model=task.payload_model,
@@ -751,6 +798,8 @@ def _run_page_agent_tasks(
         for future in as_completed(futures):
             idx, task = futures[future]
             results.append((idx, task, future.result()))
+            if page_on_rounds:
+                page_on_rounds[idx](1, 1)
 
     combined_ops: dict[str, list[dict[str, str]]] = {"create_pages": [], "update_pages": []}
     notes: list[str] = []
@@ -795,8 +844,11 @@ def run(
     _bootstrap_memory(memory_dir)
 
     checkpoint_path = memory_dir / ".last_ingest"
-    last_ingest = read_checkpoint(checkpoint_path)
+    last_ingest = read_checkpoint(checkpoint_path, default_age=DEFAULT_MISSING_CHECKPOINT_AGE)
     inputs = _collect_ingest_inputs(logs_path, last_ingest)
+
+    progress = MemoryIngestProgress(on_round)
+    progress.emit(0)
 
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
     inventory_result = _run_agent_pass(
@@ -805,10 +857,11 @@ def run(
         logs_dir,
         model,
         api_key,
-        on_round,
+        progress.phase_callback(0, 20),
         subagent_model,
         subagent_api_key,
     )
+    progress.emit(20)
     inventory = _parse_inventory(inventory_result, inputs.mode)
 
     before_mtimes = {str(p.relative_to(memory_dir)): p.stat().st_mtime for p in _all_memory_markdown(memory_dir)}
@@ -858,10 +911,12 @@ def run(
         memory_dir,
         model,
         api_key,
-        on_round,
+        None,
         subagent_model,
         subagent_api_key,
+        page_on_rounds=progress.page_callbacks(len(page_tasks), 20, 60),
     )
+    progress.emit(80)
     content_result = "\n\n".join(content_result_parts) or "(no content page agents were needed)"
     content_changed = _apply_page_ops(memory_dir, content_ops)
 
@@ -879,7 +934,7 @@ def run(
         logs_dir,
         model,
         api_key,
-        on_round,
+        progress.phase_callback(80, 20),
         subagent_model,
         subagent_api_key,
         final_response_model=FinalizePageOpsPayload,
@@ -903,6 +958,7 @@ def run(
         raise RuntimeError(f"Memory ingest validation failed: {_format_json(final_issues)}")
 
     write_checkpoint(checkpoint_path)
+    progress.emit(100)
     content_notes_text = f"\nNotes: {content_notes}" if content_notes else ""
     finalize_notes_text = f"\nNotes: {finalize_notes}" if finalize_notes else ""
 
