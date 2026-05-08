@@ -462,6 +462,7 @@ class MemoryIngestTests(unittest.TestCase):
             self.assertIn("Planning is optional.", prompt)
             self.assertIn("do not use PlanUpdate just to mark routine items complete", prompt)
             self.assertIn("likely next need", prompt)
+            self.assertIn("Add or preserve the best-fit `category` in frontmatter", prompt)
             self.assertIn("Avoid leaving dangling `[[wiki-links]]`", prompt)
             self.assertNotIn("You are doing the UPDATE pass", prompt)
             self.assertNotIn("patches", prompt)
@@ -646,6 +647,7 @@ class MemoryIngestTests(unittest.TestCase):
             self.assertIn("## Candidate Page", create_prompt)
             self.assertIn("`New Project`", create_prompt)
             self.assertIn("likely future relevance", create_prompt)
+            self.assertIn("Include the best-fit `category` in frontmatter", create_prompt)
             self.assertIn("empty `create_pages` list", create_prompt)
 
     def test_inventory_prompt_allows_first_run_discovery_without_broad_source_rules(self):
@@ -674,8 +676,28 @@ class MemoryIngestTests(unittest.TestCase):
             self.assertIn("## Changed Input Preview", prompt)
             self.assertIn("Clicked Memex", prompt)
             self.assertIn("inspect the source layout and sample available source files", prompt)
+            self.assertIn("stable categories", prompt)
+            self.assertIn("people, projects, work, interests, life, and notes", prompt)
             self.assertIn("Keep discovery purposeful and bounded", prompt)
             self.assertNotIn("Use subagents for independent source groups", prompt)
+
+    def test_page_metadata_list_includes_frontmatter_category(self):
+        with tempfile.TemporaryDirectory() as d:
+            memory = Path(d) / "logs" / "memory"
+            ingest._bootstrap_memory(memory)
+            (memory / "project.md").write_text(
+                "---\n"
+                "title: Project\n"
+                "category: projects\n"
+                "confidence: 0.7\n"
+                "last_updated: 2026-05-03\n"
+                "---\n\n"
+                "Project page summary.\n"
+            )
+
+            metadata = ingest._page_metadata_list(memory)
+
+            self.assertIn("`project.md` — title: Project — category: projects", metadata)
 
     def test_finalize_prompt_includes_changed_page_metadata(self):
         with tempfile.TemporaryDirectory() as d:

@@ -13,6 +13,7 @@ Pages are markdown with YAML frontmatter:
 ```
 ---
 title: <Page Title>
+category: <people|projects|work|interests|life|notes>
 confidence: <0.0-1.0>
 last_updated: <YYYY-MM-DD>
 ---
@@ -24,7 +25,7 @@ Pages use [[wiki-links]] to cross-reference. A link [[Page Name]] resolves by sl
 
 Start by using bash to run a Python script that:
 1. Recursively finds all .md files in {memory_dir}/
-2. Parses their YAML frontmatter (title, confidence, last_updated)
+2. Parses their YAML frontmatter (title, category, confidence, last_updated)
 3. Extracts all [[wiki-links]] from each page
 4. Builds a report: total pages, broken links, pages missing frontmatter, confidence distribution, pages not updated in 14+ days, pages with confidence < 0.2 and last_updated > 30 days
 
@@ -54,7 +55,7 @@ If a category folder has grown to 10+ pages, consider whether subcategories help
 Identify pages that discuss related topics but don't link to each other. Add [[wiki-links]] where natural connections exist.
 
 ### 8. Schema compliance
-Every page must have the required frontmatter (title, confidence, last_updated). Fix any pages missing these fields.
+Every page must have the required frontmatter (title, category, confidence, last_updated). Fix any pages missing these fields.
 
 ### 9. Fact verification
 For high-confidence (>0.7) pages about people, companies, or projects, spot-check key claims with web_search. Update if information is outdated.

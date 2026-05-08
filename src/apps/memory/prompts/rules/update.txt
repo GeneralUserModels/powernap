@@ -6,6 +6,7 @@ Allowed work:
 - Read planned sources and adjacent evidence relevant to the target page.
 - Rewrite the target page with grounded evidence, insight, confidence changes, and cross-links.
 - Preserve useful existing structure and details from the target page.
+- Add or preserve the best-fit `category` in frontmatter; change it only when evidence shows a better stable category.
 - Add forward-looking context when the evidence implies a likely next need, useful future research path, or operational follow-up.
 
 Not allowed:

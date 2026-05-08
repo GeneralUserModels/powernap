@@ -283,18 +283,45 @@ def _page_metadata_list(memory_dir: Path, rel_paths: list[str] | None = None) ->
     for page in sorted(set(pages)):
         rel = page.relative_to(memory_dir)
         title = _page_title(page)
+        category = _page_category(page, memory_dir)
         excerpt = _page_excerpt(page)
+        category_suffix = f" — category: {category}" if category else ""
         suffix = f" — {excerpt}" if excerpt else ""
-        lines.append(f"- `{rel}` — title: {title}{suffix}")
+        lines.append(f"- `{rel}` — title: {title}{category_suffix}{suffix}")
     return "\n".join(lines)
 
 
-def _page_title(path: Path) -> str:
+def _page_frontmatter(path: Path) -> dict[str, str]:
     text = path.read_text()
-    match = re.search(r"^title:\s*(.+?)\s*$", text, re.MULTILINE)
-    if match:
-        return match.group(1).strip().strip('"')
+    if not text.startswith("---\n"):
+        return {}
+    marker = "\n---\n"
+    end = text.find(marker, 4)
+    if end == -1:
+        return {}
+    frontmatter: dict[str, str] = {}
+    for line in text[4:end].splitlines():
+        key, sep, value = line.partition(":")
+        if sep:
+            frontmatter[key.strip()] = value.strip().strip("\"'")
+    return frontmatter
+
+
+def _page_title(path: Path) -> str:
+    title = _page_frontmatter(path).get("title")
+    if title:
+        return title
     return path.stem.replace("-", " ").title()
+
+
+def _page_category(path: Path, memory_dir: Path) -> str | None:
+    category = _page_frontmatter(path).get("category")
+    if category:
+        return category
+    rel = path.relative_to(memory_dir)
+    if str(rel.parent) != ".":
+        return str(rel.parent)
+    return None
 
 
 def _clean_page_ref(ref: Any) -> str:
