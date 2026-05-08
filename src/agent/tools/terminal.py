@@ -10,6 +10,7 @@ from sandbox_runtime import SandboxManager
 from sandbox_runtime.config import FilesystemConfig, NetworkConfig, SandboxRuntimeConfig
 
 from .base_tool import BaseTool
+from .sanitize import sanitize_tool_output
 
 
 class TerminalTool(BaseTool):
@@ -114,8 +115,10 @@ class TerminalTool(BaseTool):
             err = self._decode_timeout_piece(stderr)
             if err:
                 partial += ("\n" if partial else "") + err
+            partial = sanitize_tool_output(partial)
             return (partial[:50000] + "\n" if partial else "") + f"(timed out after {self.TIMEOUT_SECONDS}s — narrow the scope and retry)"
         output = stdout
         if stderr:
             output += ("\n" if output else "") + stderr
+        output = sanitize_tool_output(output)
         return output[:50000] if output else f"(exit code {proc.returncode})"

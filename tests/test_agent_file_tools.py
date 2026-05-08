@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import json
 import sys
 import tempfile
 import unittest
@@ -15,6 +16,8 @@ if str(SRC) not in sys.path:
 from sandbox_runtime import SandboxManager, SandboxRuntimeConfig
 
 from agent.tools.edit import EditTool
+from agent.tools.read import ReadTool
+from agent.tools.sanitize import sanitize_tool_output
 from agent.tools.write import WriteTool
 
 
@@ -101,6 +104,39 @@ class AgentFileToolSandboxTests(unittest.TestCase):
             with self.assertRaises(PermissionError):
                 EditTool([allowed]).run(str(denied / "no.txt"), "before", "after")
             self.assertEqual((denied / "no.txt").read_text(), "before")
+
+    def test_sanitize_tool_output_removes_raw_events_from_jsonl(self):
+        row = {
+            "timestamp": 1,
+            "text": "useful caption",
+            "source": {
+                "id": "row-id",
+                "summary": "summary",
+                "raw_events": [{"event_type": "mouse_scroll", "dy": -2}],
+            },
+        }
+        output = sanitize_tool_output(f"/tmp/screen/filtered.jsonl:{json.dumps(row)}\n")
+
+        self.assertIn("/tmp/screen/filtered.jsonl:", output)
+        self.assertIn("useful caption", output)
+        self.assertIn("row-id", output)
+        self.assertNotIn("mouse_scroll", output)
+        self.assertNotIn("raw_events", output)
+
+    def test_read_file_sanitizes_raw_events(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "filtered.jsonl"
+            path.write_text(json.dumps({
+                "timestamp": 1,
+                "text": "caption",
+                "source": {"raw_events": [{"event_type": "mouse_scroll"}]},
+            }))
+
+            output = ReadTool().run(str(path))
+
+            self.assertIn("caption", output)
+            self.assertNotIn("mouse_scroll", output)
+            self.assertNotIn("raw_events", output)
 
 
 if __name__ == "__main__":

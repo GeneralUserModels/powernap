@@ -40,7 +40,6 @@ export const startOutlookAuth = () => request("POST", "/api/auth/outlook/start")
 export const disconnectOutlook = () => request("DELETE", "/api/auth/outlook");
 
 // ── Moments ─────────────────────────────────────────────
-export const getMomentsTasks = () => request("GET", "/api/moments/tasks");
 export const getMomentsResults = (includeDismissed = false) =>
   request("GET", `/api/moments/results${includeDismissed ? "?include_dismissed=true" : ""}`) as Promise<MomentResult[]>;
 
@@ -62,9 +61,6 @@ export const recordMomentView = (slug: string) =>
 export const recordMomentViewEnd = (slug: string, data: { duration_ms: number }) =>
   request("POST", `/api/moments/${slug}/view-end`, data);
 
-export const endMomentFeedback = (slug: string) =>
-  request("POST", `/api/moments/${slug}/feedback/end`);
-
 export const rerunMoment = (slug: string) =>
   request("POST", `/api/moments/${slug}/rerun`);
 
@@ -73,8 +69,6 @@ export const getSeekerStatus = () =>
   request("GET", "/api/seeker/status") as Promise<SeekerStatus>;
 export const getSeekerConversation = () =>
   request("GET", "/api/seeker/conversation") as Promise<{ active: boolean; messages: SeekerMessage[] }>;
-export const endSeekerConversation = () =>
-  request("POST", "/api/seeker/end");
 export const getSeekerHistory = () =>
   request("GET", "/api/seeker/history") as Promise<{ filename: string; date: string }[]>;
 export const getSeekerPastConversation = (filename: string) =>
@@ -109,9 +103,6 @@ export const deleteMemoryPage = (path: string) =>
 
 export const getMemoryStatus = () =>
   request("GET", "/api/memory/status") as Promise<{ exists: boolean; last_ingest: string | null; last_lint: string | null; page_count: number }>;
-
-export const getMemoryLog = () =>
-  requestText("GET", "/api/memory/log");
 
 // ── Onboarding ───────────────────────────────────────────────
 export const getGoogleConnectorStatus = () =>
