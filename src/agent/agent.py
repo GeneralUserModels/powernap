@@ -53,12 +53,14 @@ class Agent:
         warning_round: int | None = None,
         llm_timeout_s: float | None = 120,
         llm_max_tokens: int = 16000,
+        parallel_tools: set[str] | None = None,
     ):
         self.model = model
         self.api_key = api_key or None
         self.system_prompt = system_prompt
         self.max_rounds = max_rounds
         self.max_output_tokens = max_output_tokens
+        self._parallel_tools = set(parallel_tools) if parallel_tools else set()
         self.on_round = on_round
         self.on_tool_call = on_tool_call
         self.on_token = on_token
@@ -205,10 +207,12 @@ class Agent:
                     return self._finalize_structured(messages, final_response_model, final_instruction, final_metadata_app)
                 return assistant_msg.content or ""
 
-            # tool dispatch — subagent calls run in parallel, everything else sequential
+            # tool dispatch — subagent calls run in parallel, opt-in parallel_tools also
+            # parallelize within a round (when 2+ in this batch), everything else sequential
             used_plan = False
             manual_compress = False
             subagent_calls = []
+            parallel_safe_calls = []
             sequential_calls = []
 
             for call in local_calls:
@@ -223,8 +227,16 @@ class Agent:
                     continue
                 if name == "task":
                     subagent_calls.append((call, args))
+                elif name in self._parallel_tools:
+                    parallel_safe_calls.append((call, args))
                 else:
                     sequential_calls.append((call, args))
+
+            # parallel_tools with 2+ calls fan out via threads; a single call falls
+            # through to sequential to avoid the executor overhead
+            if len(parallel_safe_calls) < 2:
+                sequential_calls = parallel_safe_calls + sequential_calls
+                parallel_safe_calls = []
 
             # run sequential tools
             for call, args in sequential_calls:
@@ -248,6 +260,36 @@ class Agent:
                 messages.append({"role": "tool", "tool_call_id": call.id, "content": str(output)})
                 if name in ("PlanWrite", "PlanUpdate"):
                     used_plan = True
+
+            # run parallel-safe tools concurrently (opt-in via parallel_tools)
+            if parallel_safe_calls:
+                print(f"  > running {len(parallel_safe_calls)} tool call(s) in parallel: {[c.function.name for c, _ in parallel_safe_calls]}")
+                with ThreadPoolExecutor(max_workers=len(parallel_safe_calls)) as pool:
+                    futures = {}
+                    for call, args in parallel_safe_calls:
+                        name = call.function.name
+                        args_summary = {k: (v[:200] + "..." if isinstance(v, str) and len(v) > 200 else v) for k, v in args.items()}
+                        print(f"  > {name}({json.dumps(args_summary, default=str)[:800]})")
+                        if self.on_tool_call:
+                            try:
+                                self.on_tool_call(name, args)
+                            except Exception as e:
+                                print(f"  [on_tool_call error] {e}")
+                        tool = self._tool_map.get(name)
+                        if tool is None:
+                            messages.append({"role": "tool", "tool_call_id": call.id, "content": f"Unknown tool: {name}"})
+                            continue
+                        futures[pool.submit(tool.run, **args)] = call
+                    for future in as_completed(futures):
+                        call = futures[future]
+                        name = call.function.name
+                        try:
+                            output = future.result()
+                        except Exception as e:
+                            output = f"Error: {e}"
+                            print(f"  > {name} ERROR: {e}")
+                        print(f"  > {name} result: {str(output)[:500]}")
+                        messages.append({"role": "tool", "tool_call_id": call.id, "content": str(output)})
 
             # run subagent calls in parallel, staggered to avoid overloading the API
             if subagent_calls:
