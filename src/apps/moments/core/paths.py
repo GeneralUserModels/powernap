@@ -14,7 +14,7 @@ def _is_topic_dir(p: Path) -> bool:
 
 def list_task_files(tada_dir: Path) -> list[Path]:
     """Return every task .md under tada_dir, across topic subdirs and any
-    legacy flat files. Sorted by path for stable iteration."""
+    top-level task files. Sorted by path for stable iteration."""
     files: list[Path] = list(tada_dir.glob("*.md"))
     for sub in tada_dir.iterdir():
         if _is_topic_dir(sub):
@@ -23,96 +23,21 @@ def list_task_files(tada_dir: Path) -> list[Path]:
     return files
 
 
-def _split_frontmatter(text: str) -> tuple[dict[str, str], str] | None:
-    if not text.startswith("---"):
-        return None
-    end = text.find("\n---", 3)
-    if end == -1:
-        return None
-    body_start = text.find("\n", end + 4)
-    body = text[body_start + 1:] if body_start != -1 else ""
-    frontmatter: dict[str, str] = {}
-    for line in text[3:end].strip().splitlines():
-        if ":" in line:
-            key, _, value = line.partition(":")
-            frontmatter[key.strip()] = value.strip()
-    return frontmatter, body
-
-
-def _render_frontmatter(fm: dict[str, str], body: str) -> str:
-    order = ["title", "description", "cadence", "schedule", "trigger", "confidence", "usefulness"]
-    lines = ["---"]
-    emitted: set[str] = set()
-    for key in order:
-        value = fm.get(key)
-        if value is not None and value != "":
-            lines.append(f"{key}: {value}")
-            emitted.add(key)
-    for key in sorted(k for k in fm if k not in emitted and k != "frequency"):
-        value = fm[key]
-        if value != "":
-            lines.append(f"{key}: {value}")
-    lines.extend(["---", ""])
-    return "\n".join(lines) + body
-
-
-def migrate_moments_to_cadence(tada_dir: Path) -> int:
-    """Rewrite accepted moment/state schema from frequency to cadence."""
-    if not tada_dir.exists():
-        return 0
-    changed = 0
-    for md in list_task_files(tada_dir):
-        text = md.read_text()
-        parsed = _split_frontmatter(text)
-        if parsed is None:
-            continue
-        fm, body = parsed
-        if "cadence" in fm:
-            continue
-        frequency = fm.pop("frequency", "")
-        if fm.get("trigger"):
-            fm["cadence"] = "trigger"
-            fm.pop("schedule", None)
-        elif frequency in ("daily", "weekly"):
-            fm["cadence"] = "scheduled"
-        else:
-            fm["cadence"] = "once"
-            fm.pop("schedule", None)
-        md.write_text(_render_frontmatter(fm, body))
-        changed += 1
-
-    state_path = tada_dir / "results" / "_moment_state.json"
-    if state_path.exists():
-        import json
-
-        state = json.loads(state_path.read_text())
-        state_changed = False
-        for entry in state.values():
-            if "frequency_override" in entry:
-                old = entry.pop("frequency_override")
-                entry["cadence_override"] = "scheduled" if old in ("daily", "weekly") else old
-                state_changed = True
-        if state_changed:
-            state_path.write_text(json.dumps(state, indent=2))
-            changed += 1
-    return changed
-
-
 def find_task_md(tada_dir: Path, slug: str) -> Path | None:
-    """Locate a task .md by slug, checking topic dirs first, then flat."""
+    """Locate a task .md by slug, checking topic dirs first, then top level."""
     for sub in tada_dir.iterdir():
         if not _is_topic_dir(sub):
             continue
         candidate = sub / f"{slug}.md"
         if candidate.exists():
             return candidate
-    flat = tada_dir / f"{slug}.md"
-    return flat if flat.exists() else None
+    top_level = tada_dir / f"{slug}.md"
+    return top_level if top_level.exists() else None
 
 
 def get_topic(md_file: Path, tada_dir: Path) -> str:
     """Topic name for a task .md, derived from its parent dir. Empty string
-    for legacy flat files sitting directly in tada_dir."""
+    for top-level task files sitting directly in tada_dir."""
     if md_file.parent == tada_dir:
         return ""
     return md_file.parent.name
@@ -173,7 +98,7 @@ def summarize_tada_tasks(tada_dir: Path) -> str:
     lines: list[str] = []
     for md in files:
         fm = _parse_frontmatter(md.read_text())
-        topic = get_topic(md, tada_dir) or "(flat)"
+        topic = get_topic(md, tada_dir) or "(top-level)"
         slug = md.stem
         title = fm.get("title", slug)
         description = fm.get("description", "")

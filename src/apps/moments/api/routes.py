@@ -17,7 +17,7 @@ import time as _time
 
 from apps.moments.runtime.execute import _parse_frontmatter as parse_frontmatter
 from apps.moments.runtime.execute import run as execute_moment
-from apps.moments.core.paths import find_task_md, get_topic, list_task_files, migrate_moments_to_cadence
+from apps.moments.core.paths import find_task_md, get_topic, list_task_files
 from apps.moments.runtime.scheduler import save_run, load_run_history
 from apps.moments.core.state import (
     load_state,
@@ -121,7 +121,6 @@ async def list_tasks(request: Request):
     tada_dir = _get_tada_dir(request)
     if not tada_dir.exists():
         return []
-    migrate_moments_to_cadence(tada_dir)
     tasks = []
     for md_file in list_task_files(tada_dir):
         fm = parse_frontmatter(md_file.read_text())
@@ -146,7 +145,6 @@ async def list_tasks(request: Request):
 async def list_results(request: Request, include_dismissed: bool = False):
     """List completed moment results, sorted by most recent first."""
     tada_dir = _get_tada_dir(request)
-    migrate_moments_to_cadence(tada_dir)
     results_dir = tada_dir / "results"
     if not results_dir.exists():
         return []
@@ -267,7 +265,6 @@ async def update_moment_schedule(slug: str, body: ScheduleUpdate, request: Reque
         return JSONResponse({"error": "cadence must be once, scheduled, or trigger"}, status_code=400)
 
     tada_dir = _get_tada_dir(request)
-    migrate_moments_to_cadence(tada_dir)
     all_state = load_state(tada_dir)
     entry = {**DEFAULT_SLUG_STATE, **all_state.get(slug, {})}
     entry["cadence_override"] = body.cadence
@@ -309,7 +306,6 @@ async def rerun_moment(slug: str, request: Request):
     """Trigger an immediate re-execution of a moment."""
     state = request.app.state.server
     tada_dir = _get_tada_dir(request)
-    migrate_moments_to_cadence(tada_dir)
     task_path = find_task_md(tada_dir, slug)
 
     if task_path is None:

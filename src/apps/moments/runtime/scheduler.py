@@ -11,7 +11,7 @@ from datetime import datetime, time, timedelta, timezone
 from pathlib import Path
 
 from apps.moments.runtime.execute import run as execute_moment, _parse_frontmatter as parse_frontmatter
-from apps.moments.core.paths import list_task_files, migrate_moments_to_cadence
+from apps.moments.core.paths import list_task_files
 from apps.moments.core.state import clear_pending_update, load_state
 from server.feature_flags import is_enabled
 
@@ -311,7 +311,6 @@ async def run_moments_scheduler(state) -> None:
             tada_dir = Path(state.config.tada_dir).resolve()
             if not tada_dir.exists():
                 continue
-            migrate_moments_to_cadence(tada_dir)
 
             results_dir = tada_dir / "results"
             results_dir.mkdir(parents=True, exist_ok=True)

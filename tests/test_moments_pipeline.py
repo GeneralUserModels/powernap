@@ -28,7 +28,6 @@ from apps.moments.core.candidates import (
     validate_candidate,
     write_candidates_jsonl,
 )
-from apps.moments.core.paths import migrate_moments_to_cadence
 from apps.moments.api import routes as moments_routes
 from apps.moments.runtime import execute
 from apps.moments.runtime.scheduler import load_run_history, scheduled_service_due, should_run
@@ -219,33 +218,6 @@ class MomentsPipelineTests(unittest.TestCase):
         )
         self.assertEqual([c.slug for c in promoted], ["paper-digest"])
         self.assertEqual(rejected, [])
-
-    def test_migration_rewrites_frequency_to_cadence_and_state(self):
-        with tempfile.TemporaryDirectory() as d:
-            tada = Path(d) / "logs-tada"
-            topic = tada / "research"
-            topic.mkdir(parents=True)
-            (topic / "daily.md").write_text(
-                "---\n"
-                "title: Daily\n"
-                "description: Desc\n"
-                "frequency: daily\n"
-                "schedule: at 8am\n"
-                "confidence: 0.8\n"
-                "usefulness: 8\n"
-                "---\n\nBody\n"
-            )
-            state = tada / "results" / "_moment_state.json"
-            state.parent.mkdir(parents=True)
-            state.write_text(json.dumps({"daily": {"frequency_override": "weekly"}}))
-
-            changed = migrate_moments_to_cadence(tada)
-
-            self.assertGreaterEqual(changed, 2)
-            text = (topic / "daily.md").read_text()
-            self.assertIn("cadence: scheduled", text)
-            self.assertNotIn("frequency:", text)
-            self.assertEqual(json.loads(state.read_text())["daily"]["cadence_override"], "scheduled")
 
     def test_scheduler_respects_cadence(self):
         self.assertTrue(should_run("once", "once", "", {}))

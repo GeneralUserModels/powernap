@@ -38,7 +38,7 @@ from apps.moments.core.candidates import (
     write_candidates_jsonl,
 )
 from apps.moments.core.incremental import read_checkpoint, write_checkpoint
-from apps.moments.core.paths import migrate_moments_to_cadence, summarize_tada_tasks
+from apps.moments.core.paths import summarize_tada_tasks
 from apps.moments.schemas.structured import DraftActionPayload, IdeaPayload, ReconcilePayload
 
 _PROMPTS = Path(__file__).resolve().parent.parent / "prompts"
@@ -692,7 +692,6 @@ def run(
     checkpoint_path = state_dir / ".last_discovery"
     tada_dir.mkdir(parents=True, exist_ok=True)
     state_dir.mkdir(parents=True, exist_ok=True)
-    migrate_moments_to_cadence(tada_dir)
     _ensure_sandbox([str(tada_dir.resolve())])
 
     last_discovery = read_checkpoint(checkpoint_path)
