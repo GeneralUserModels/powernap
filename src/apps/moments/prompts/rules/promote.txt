@@ -14,4 +14,4 @@
 - Down-rank or reject candidates whose `likely_next_need` is vague, generic, or disconnected from the requested artifact.
 - Down-rank passive recaps unless the artifact clearly enables a future action, decision, or workflow.
 - Down-rank static inventories unless they include prioritization, implications, recommended actions, or a decision frame tied to the likely next need.
-- Do not call tools. Do not read files, run shell commands, or write accepted markdown. Python will persist top-ranked moments after parsing your JSON.
+- Do not call tools.

@@ -1,13 +1,13 @@
 ## Rules
 
-Output new content-page operations only. This pass exists to grow the wiki.
+Output at most one new content-page create operation. This agent owns exactly one candidate page.
 
 Allowed work:
-- Create new normal memory wiki pages from grounded page opportunities.
-- Create new normal memory wiki pages from deferred update candidates, especially split targets discovered while patching existing pages.
-- Create low-confidence starter pages when a candidate has enough evidence for one useful paragraph.
+- Create one normal memory wiki page when the candidate is grounded and distinct.
+- Create a low-confidence starter page when the candidate has enough evidence for one useful paragraph.
 - Add `[[wiki-links]]` to existing represented pages when natural.
-- Skip candidates only when they duplicate an existing page, lack evidence after reading, or would be misleading.
+- Skip the candidate when it duplicates an existing page, lacks evidence after reading, or would be misleading.
+- Include forward-looking context when the evidence implies a likely next need, useful future research path, or operational follow-up.
 
 Not allowed:
 - Do not update existing normal content pages.
@@ -16,7 +16,7 @@ Not allowed:
 - Do not call `write_file` or `edit_file`; return JSON operations only.
 
 Execution guidance:
-- Prefer 3-8 focused new pages when there are meaningful grounded candidates. On first runs, 5-12 pages is appropriate when candidates are grounded and distinct.
+- Read evidence for this candidate before writing.
+- Keep the page compact but useful: facts, why it matters, confidence, links, and likely future relevance.
 - Use source dates exactly as provided in evidence.
-- Keep pages compact but useful: facts, why it matters, confidence, and links.
-- Avoid dangling `[[wiki-links]]`; link only to represented pages or candidates you are creating in the same response.
+- Avoid dangling `[[wiki-links]]`; link only to represented pages.

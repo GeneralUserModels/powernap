@@ -8,7 +8,7 @@ from typing import Callable
 
 import httpx
 import litellm
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential_jitter
 
 from .tools.base_tool import BaseTool
@@ -405,12 +405,8 @@ class Agent:
         except litellm.JSONSchemaValidationError as exc:
             raw = getattr(exc, "raw_response", "")
             if isinstance(raw, str) and raw.strip():
-                try:
-                    response_model.model_validate_json(raw)
-                except ValidationError:
-                    pass
-                else:
-                    return raw
+                response_model.model_validate_json(raw)
+                return raw
             raise
         message = response.choices[0].message
         tool_calls = getattr(message, "tool_calls", None) or []

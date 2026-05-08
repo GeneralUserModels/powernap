@@ -14,17 +14,9 @@ Mode: `{mode}`
 {inventory_json}
 ```
 
-## Page Opportunities
+## Candidate Page
 
-```json
-{opportunity_json}
-```
-
-## Deferred Page Candidates From Update
-
-```json
-{update_deferred_candidates_json}
-```
+`{candidate_title}`
 
 ## Existing Content Page Metadata
 
@@ -36,23 +28,10 @@ Mode: `{mode}`
 
 ## Task
 
-Draft new normal content pages from the page opportunities and deferred page candidates from update.
+Decide whether `{candidate_title}` deserves one new normal memory page. Read the relevant planned sources and any adjacent evidence needed to avoid a duplicate or shallow page.
 
-Read the cited evidence before writing. Create focused pages for grounded candidates that are not already represented by existing pages or index entries. Treat deferred update candidates as explicit handoffs from existing-page work, especially when an overbroad page should be split or a missing entity was discovered while patching. Starter pages are acceptable when they contain a useful grounded paragraph, confidence scores, and clear links to adjacent pages.
+If it is grounded and distinct, return one `create_pages` entry with full markdown including YAML frontmatter. Do not include a path; Python will derive the page path from the candidate title. If it is not grounded enough or duplicates an existing page, return an empty `create_pages` list and explain briefly in `notes`.
 
-Do not write files directly. Python will apply the returned operations after validating paths and frontmatter.
+Do not write files directly. Python will apply the returned operation after validating frontmatter.
 
-End with a single fenced JSON block. It must be the last thing in your final message.
-
-```json
-{{
-  "create_pages": [
-    {{
-      "path": "relative/page.md",
-      "markdown": "---\\ntitle: Page Title\\nconfidence: 0.45\\nlast_updated: YYYY-MM-DD\\n---\\n\\nPage body."
-    }}
-  ],
-  "update_pages": [],
-  "notes": "Concise summary of pages created and candidates skipped."
-}}
-```
+When finished, return the create-page result. The structured response schema enforces `create_pages`, empty `update_pages`, `markdown`, and `notes`. Do not include a path in the returned item.

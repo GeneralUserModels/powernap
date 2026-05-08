@@ -8,18 +8,33 @@ from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
 
+from pydantic import ValidationError
+
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 from apps.memory import ingest
+from apps.memory.schemas.structured import ExistingPageUpdatePayload, FinalizePageOpsPayload, NewPageCreatePayload
 from apps.moments.runtime.scheduler import scheduled_service_due
 
 
 def _write_checkpoint(path: Path, value: str = "2025-01-01T00:00:00") -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(value + "\n")
+
+
+class _FakeMemoryAgent:
+    def __init__(self, result: str):
+        self.result = result
+        self.max_rounds = None
+        self.on_round = None
+        self.calls: list[dict] = []
+
+    def run(self, messages, **kwargs):
+        self.calls.append({"messages": messages, "kwargs": kwargs})
+        return self.result
 
 
 class MemoryIngestTests(unittest.TestCase):
@@ -74,6 +89,21 @@ class MemoryIngestTests(unittest.TestCase):
             self.assertEqual((memory / "log.md").read_text(), "existing log")
             self.assertIn("Memory Wiki Schema", (memory / "schema.md").read_text())
 
+    def test_page_agent_env_knobs_parse_with_bounds(self):
+        with patch.dict(
+            "os.environ",
+            {"MEMORY_PAGE_AGENT_CONCURRENCY": "7", "MEMORY_PAGE_AGENT_MAX_ROUNDS": "4"},
+        ):
+            self.assertEqual(ingest._page_agent_concurrency(), 7)
+            self.assertEqual(ingest._page_agent_max_rounds(), 5)
+
+        with patch.dict(
+            "os.environ",
+            {"MEMORY_PAGE_AGENT_CONCURRENCY": "bad", "MEMORY_PAGE_AGENT_MAX_ROUNDS": "bad"},
+        ):
+            self.assertEqual(ingest._page_agent_concurrency(), ingest.DEFAULT_PAGE_AGENT_CONCURRENCY)
+            self.assertEqual(ingest._page_agent_max_rounds(), ingest.DEFAULT_PAGE_AGENT_MAX_ROUNDS)
+
     def test_validation_detects_frontmatter_index_and_log_issues(self):
         with tempfile.TemporaryDirectory() as d:
             memory = Path(d) / "logs" / "memory"
@@ -95,48 +125,23 @@ class MemoryIngestTests(unittest.TestCase):
             logs.mkdir()
             calls: list[tuple[str, str]] = []
 
-            def fake_pass(pass_name, instruction, logs_dir, model, api_key, on_round, subagent_model, subagent_api_key):
+            def fake_pass(pass_name, instruction, logs_dir, model, api_key, on_round, subagent_model, subagent_api_key, **kwargs):
                 calls.append((pass_name, instruction))
-                memory = Path(logs_dir) / "memory"
+                if pass_name == "create_page":
+                    self.assertIs(kwargs.get("final_response_model"), NewPageCreatePayload)
+                    self.assertEqual(kwargs.get("final_metadata_app"), "memory_create_page")
+                if pass_name == "finalize":
+                    self.assertIs(kwargs.get("final_response_model"), FinalizePageOpsPayload)
+                    self.assertEqual(kwargs.get("final_metadata_app"), "memory_finalize_pages")
                 if pass_name == "inventory":
                     return """```json
 {"mode":"first_run","sources_to_read":[],"existing_pages_to_read":[],"likely_pages_to_create":["Project"],"likely_pages_to_update":[],"backfill_sources_to_sample":[],"rationale":"test"}
 ```"""
-                if pass_name == "opportunities":
-                    self.assertIn('"likely_pages_to_create"', instruction)
-                    return "```json\n" + json.dumps({
-                        "page_candidates": [{
-                            "title": "Project",
-                            "kind": "project",
-                            "evidence": ["screen/filtered.jsonl: Project evidence"],
-                            "novelty": "No existing page covers it.",
-                            "confidence": 0.7,
-                            "recommended_action": "create_full",
-                        }],
-                        "rejected_candidates": [],
-                        "notes": "found project",
-                    }) + "\n```"
-                if pass_name == "update":
-                    return "```json\n" + json.dumps({
-                        "create_pages": [],
-                        "update_pages": [],
-                        "deferred_page_candidates": [{
-                            "title": "Deferred Project",
-                            "kind": "project",
-                            "evidence": ["screen/filtered.jsonl: Deferred project evidence"],
-                            "novelty": "Discovered while reading existing pages.",
-                            "confidence": 0.55,
-                            "recommended_action": "create_stub",
-                        }],
-                        "notes": "no existing pages",
-                    }) + "\n```"
-                if pass_name == "create":
-                    self.assertIn('"page_candidates"', instruction)
-                    self.assertIn("## Deferred Page Candidates From Update", instruction)
-                    self.assertIn('"Deferred Project"', instruction)
+                if pass_name == "create_page":
+                    self.assertIn("## Candidate Page", instruction)
+                    self.assertIn("`Project`", instruction)
                     return "```json\n" + json.dumps({
                         "create_pages": [{
-                            "path": "project.md",
                             "markdown": "---\ntitle: Project\nconfidence: 0.7\nlast_updated: 2026-05-03\n---\n\nProject page. [c:0.7]\n",
                         }],
                         "update_pages": [],
@@ -157,12 +162,71 @@ class MemoryIngestTests(unittest.TestCase):
             with patch.object(ingest, "_run_agent_pass", side_effect=fake_pass):
                 result = ingest.run(str(logs), model="fake-model")
 
-            self.assertEqual([name for name, _ in calls], ["inventory", "opportunities", "update", "create", "finalize"])
+            self.assertEqual([name for name, _ in calls], ["inventory", "create_page", "finalize"])
             self.assertTrue((logs / "memory" / ".last_ingest").exists())
             self.assertIn("## Inventory", result)
-            self.assertIn("## Page Opportunities", result)
-            self.assertIn("## Create", result)
+            self.assertIn("## Content", result)
             self.assertIn("created project.md", result)
+
+    def test_run_uses_per_page_update_payload_end_to_end(self):
+        with tempfile.TemporaryDirectory() as d:
+            logs = Path(d) / "logs"
+            memory = logs / "memory"
+            ingest._bootstrap_memory(memory)
+            (memory / "project.md").write_text(
+                "---\n"
+                "title: Project\n"
+                "confidence: 0.7\n"
+                "last_updated: 2026-05-03\n"
+                "---\n\n"
+                "# Project\n\n"
+                "## Evidence\n\n"
+                "Existing detail.\n"
+            )
+
+            today = datetime.now().strftime("%Y-%m-%d")
+            agents = [
+                _FakeMemoryAgent("""```json
+{"mode":"first_run","sources_to_read":[],"existing_pages_to_read":["project.md"],"likely_pages_to_create":[],"likely_pages_to_update":["project.md"],"backfill_sources_to_sample":[],"rationale":"test"}
+```"""),
+                _FakeMemoryAgent(json.dumps({
+                    "create_pages": [],
+                    "update_pages": [{
+                        "markdown": (
+                            "---\n"
+                            "title: Project\n"
+                            "confidence: 0.8\n"
+                            "last_updated: 2026-05-03\n"
+                            "---\n\n"
+                            "# Project\n\n"
+                            "## Evidence\n\n"
+                            "Existing detail.\n"
+                            "- Structured update evidence. [c:0.8]\n"
+                        ),
+                    }],
+                    "notes": "updated project.md",
+                })),
+                _FakeMemoryAgent("```json\n" + json.dumps({
+                    "create_pages": [],
+                    "update_pages": [
+                        {"path": "index.md", "markdown": "# Memory Index\n\n- Project — project.md\n"},
+                        {"path": "log.md", "markdown": f"# Memory Log\n\n## {today}\n- Updated Project.\n"},
+                    ],
+                    "notes": "finalized",
+                }) + "\n```"),
+            ]
+
+            with patch.object(ingest, "build_agent", side_effect=[(agent, None) for agent in agents]):
+                result = ingest.run(str(logs), model="fake-model")
+
+            update_kwargs = agents[1].calls[0]["kwargs"]
+            self.assertIs(update_kwargs["final_response_model"], ExistingPageUpdatePayload)
+            self.assertEqual(update_kwargs["final_metadata_app"], "memory_update_page")
+            self.assertIs(agents[2].calls[0]["kwargs"]["final_response_model"], FinalizePageOpsPayload)
+            self.assertEqual(agents[2].calls[0]["kwargs"]["final_metadata_app"], "memory_finalize_pages")
+            self.assertIn("Applied content page ops: project.md", result)
+            self.assertIn("Structured update evidence", (memory / "project.md").read_text())
+            self.assertTrue((memory / ".last_ingest").exists())
 
     def test_run_does_not_checkpoint_on_bad_inventory(self):
         with tempfile.TemporaryDirectory() as d:
@@ -180,35 +244,14 @@ class MemoryIngestTests(unittest.TestCase):
             logs = Path(d) / "logs"
             logs.mkdir()
 
-            def fake_pass(pass_name, instruction, logs_dir, model, api_key, on_round, subagent_model, subagent_api_key):
-                memory = Path(logs_dir) / "memory"
+            def fake_pass(pass_name, instruction, logs_dir, model, api_key, on_round, subagent_model, subagent_api_key, **kwargs):
                 if pass_name == "inventory":
                     return """```json
 {"mode":"first_run","sources_to_read":[],"existing_pages_to_read":[],"likely_pages_to_create":["Project"],"likely_pages_to_update":[],"backfill_sources_to_sample":[],"rationale":"test"}
 ```"""
-                if pass_name == "opportunities":
-                    return "```json\n" + json.dumps({
-                        "page_candidates": [{
-                            "title": "Project",
-                            "kind": "project",
-                            "evidence": ["screen/filtered.jsonl: Project evidence"],
-                            "novelty": "No existing page covers it.",
-                            "confidence": 0.7,
-                            "recommended_action": "create_full",
-                        }],
-                        "rejected_candidates": [],
-                        "notes": "found project",
-                    }) + "\n```"
-                if pass_name == "update":
-                    return "```json\n" + json.dumps({
-                        "create_pages": [],
-                        "update_pages": [],
-                        "notes": "no existing pages",
-                    }) + "\n```"
-                if pass_name == "create":
+                if pass_name == "create_page":
                     return "```json\n" + json.dumps({
                         "create_pages": [{
-                            "path": "project.md",
                             "markdown": "---\ntitle: Project\nconfidence: 0.7\nlast_updated: 2026-05-03\n---\n\nProject page.\n",
                         }],
                         "update_pages": [],
@@ -269,7 +312,7 @@ class MemoryIngestTests(unittest.TestCase):
             )
             self.assertFalse(any(issue.get("target") == "Existing Tool" for issue in issues))
 
-    def test_update_prompt_includes_update_rules_without_stage_label(self):
+    def test_update_page_prompt_scopes_agent_to_one_page(self):
         with tempfile.TemporaryDirectory() as d:
             logs = Path(d) / "logs"
             memory = logs / "memory"
@@ -287,7 +330,7 @@ class MemoryIngestTests(unittest.TestCase):
                 tada_feedback=[],
                 modified_streams=[],
             )
-            prompt = ingest._update_prompt(
+            prompt = ingest._update_page_prompt(
                 "2026-05-03 12:00",
                 str(logs),
                 memory,
@@ -301,29 +344,31 @@ class MemoryIngestTests(unittest.TestCase):
                     "backfill_sources_to_sample": [],
                     "rationale": "test",
                 },
+                "project.md",
             )
 
-            self.assertIn("Output existing content-page patch operations only.", prompt)
-            self.assertIn("Do not create new pages in this pass.", prompt)
-            self.assertIn("Do not return full-page markdown for existing pages.", prompt)
+            self.assertIn("Output one existing content-page replacement only.", prompt)
+            self.assertIn("This agent owns exactly one target page.", prompt)
+            self.assertIn("Path: `project.md`", prompt)
+            self.assertIn("Project summary.", prompt)
+            self.assertIn("Return the full replacement markdown for the target page", prompt)
             self.assertIn("Do not update `index.md`, `log.md`, or `schema.md`.", prompt)
             self.assertIn("Do not call `write_file` or `edit_file`", prompt)
-            self.assertIn('"create_pages"', prompt)
+            self.assertIn("`create_pages`", prompt)
+            self.assertIn("one-item `update_pages`", prompt)
             self.assertIn("## Existing Content Page Metadata", prompt)
             self.assertIn("`project.md` — title: Project", prompt)
             self.assertIn("Preserve source dates exactly.", prompt)
-            self.assertIn("Do not spend tool calls only checking whether a planned wiki page exists", prompt)
             self.assertIn("Use shell analysis, search, or bounded discovery", prompt)
-            self.assertIn("Planning is useful when it improves coverage.", prompt)
-            self.assertIn("Do not use PlanUpdate just to mark routine items complete", prompt)
-            self.assertIn("Use `deferred_page_candidates` to hand off missing page opportunities", prompt)
-            self.assertIn('"deferred_page_candidates"', prompt)
-            self.assertIn('"patches"', prompt)
-            self.assertIn("append_to_section", prompt)
+            self.assertIn("Planning is optional.", prompt)
+            self.assertIn("do not use PlanUpdate just to mark routine items complete", prompt)
+            self.assertIn("likely next need", prompt)
             self.assertIn("Avoid leaving dangling `[[wiki-links]]`", prompt)
             self.assertNotIn("You are doing the UPDATE pass", prompt)
+            self.assertNotIn("patches", prompt)
+            self.assertNotIn("append_to_section", prompt)
 
-    def test_update_patch_ops_preserve_existing_page_content(self):
+    def test_existing_page_write_ops_replace_one_page(self):
         with tempfile.TemporaryDirectory() as d:
             memory = Path(d) / "logs" / "memory"
             ingest._bootstrap_memory(memory)
@@ -340,77 +385,78 @@ class MemoryIngestTests(unittest.TestCase):
             result = "```json\n" + json.dumps({
                 "create_pages": [],
                 "update_pages": [{
-                    "path": "work-patterns.md",
-                    "patches": [
-                        {"type": "update_frontmatter", "fields": {"last_updated": "2026-05-06", "confidence": 0.82}},
-                        {"type": "append_to_section", "heading": "## Existing Detail", "markdown": "- New evidence. [c:0.8]"},
-                    ],
+                    "markdown": (
+                        "---\n"
+                        "title: Work Patterns\n"
+                        "confidence: 0.82\n"
+                        "last_updated: 2026-05-06\n"
+                        "---\n\n"
+                        "# Work Patterns\n\n"
+                        "## Existing Detail\n\n"
+                        "A long-standing detail that must survive updates.\n"
+                        "- New evidence. [c:0.8]\n"
+                    ),
                 }],
-                "notes": "patched work patterns",
+                "notes": "updated work patterns",
             }) + "\n```"
 
-            ops, notes = ingest._parse_update_patch_ops(result, memory)
-            changed = ingest._apply_update_patch_ops(memory, ops)
+            ops, notes = ingest._parse_page_ops(
+                result,
+                memory,
+                allow_special=False,
+                payload_model=ExistingPageUpdatePayload,
+                require_update_exists=True,
+                default_update_path="work-patterns.md",
+            )
+            changed = ingest._apply_page_ops(memory, ops)
             text = (memory / "work-patterns.md").read_text()
 
             self.assertEqual(changed, ["work-patterns.md"])
-            self.assertEqual(notes, "patched work patterns")
+            self.assertEqual(notes, "updated work patterns")
             self.assertIn("last_updated: 2026-05-06", text)
             self.assertIn("confidence: 0.82", text)
             self.assertIn("A long-standing detail that must survive updates.", text)
             self.assertIn("- New evidence. [c:0.8]", text)
 
-    def test_update_patch_ops_reject_full_page_markdown(self):
+    def test_existing_page_update_payload_rejects_wrong_shape(self):
+        with self.assertRaises(ValidationError):
+            ExistingPageUpdatePayload.model_validate({
+                "create_pages": [{"markdown": "---\ntitle: New\n---\n"}],
+                "update_pages": [],
+                "notes": "bad",
+            })
+        with self.assertRaises(ValidationError):
+            ExistingPageUpdatePayload.model_validate({
+                "create_pages": [],
+                "update_pages": [
+                    {"markdown": "---\ntitle: One\n---\n"},
+                    {"markdown": "---\ntitle: Two\n---\n"},
+                ],
+                "notes": "bad",
+            })
+
+    def test_parse_page_ops_rejects_update_target_that_does_not_exist(self):
         with tempfile.TemporaryDirectory() as d:
             memory = Path(d) / "logs" / "memory"
             ingest._bootstrap_memory(memory)
-            (memory / "project.md").write_text(
-                "---\ntitle: Project\nconfidence: 0.7\nlast_updated: 2026-05-03\n---\n\n# Project\n\nOld detail.\n"
-            )
             result = "```json\n" + json.dumps({
                 "create_pages": [],
                 "update_pages": [{
-                    "path": "project.md",
-                    "markdown": "---\ntitle: Project\nconfidence: 0.9\nlast_updated: 2026-05-06\n---\n\nReplacement.\n",
+                    "markdown": "---\ntitle: Missing\nconfidence: 0.7\nlast_updated: 2026-05-03\n---\n\nMissing.\n",
                 }],
                 "notes": "bad",
             }) + "\n```"
 
             with self.assertRaises(ValueError):
-                ingest._parse_update_patch_ops(result, memory)
+                ingest._parse_page_ops(
+                    result,
+                    memory,
+                    allow_special=False,
+                    payload_model=ExistingPageUpdatePayload,
+                    require_update_exists=True,
+                )
 
-    def test_update_patch_ops_parse_deferred_page_candidates(self):
-        with tempfile.TemporaryDirectory() as d:
-            memory = Path(d) / "logs" / "memory"
-            ingest._bootstrap_memory(memory)
-            (memory / "work-patterns.md").write_text(
-                "---\ntitle: Work Patterns\nconfidence: 0.7\nlast_updated: 2026-05-03\n---\n\n# Work Patterns\n\nOld detail.\n"
-            )
-            result = "```json\n" + json.dumps({
-                "create_pages": [],
-                "update_pages": [{
-                    "path": "work-patterns.md",
-                    "patches": [
-                        {"type": "append_section", "heading": "## New Evidence", "markdown": "A split candidate emerged. [c:0.7]"},
-                    ],
-                }],
-                "deferred_page_candidates": [{
-                    "title": "PowerNap Fuse Layer",
-                    "kind": "project",
-                    "evidence": ["work-patterns.md: recurring implementation detail needs its own page"],
-                    "novelty": "Existing Work Patterns page is too broad for this implementation detail.",
-                    "confidence": 0.65,
-                    "recommended_action": "create_stub",
-                }],
-                "notes": "handoff",
-            }) + "\n```"
-
-            ops, notes = ingest._parse_update_patch_ops(result, memory)
-
-            self.assertEqual(notes, "handoff")
-            self.assertEqual(ops["deferred_page_candidates"][0]["title"], "PowerNap Fuse Layer")
-
-    def test_opportunity_and_create_prompts_bias_toward_new_pages(self):
+    def test_create_candidate_prompt_biases_toward_new_pages(self):
         with tempfile.TemporaryDirectory() as d:
             logs = Path(d) / "logs"
             memory = logs / "memory"
@@ -434,65 +480,21 @@ class MemoryIngestTests(unittest.TestCase):
                 "backfill_sources_to_sample": [],
                 "rationale": "test",
             }
-            opportunities = {
-                "page_candidates": [{
-                    "title": "New Project",
-                    "kind": "project",
-                    "evidence": ["chats/chat_1/conversation.md: grounded evidence"],
-                    "novelty": "No existing page covers it.",
-                    "confidence": 0.45,
-                    "recommended_action": "create_stub",
-                }],
-                "rejected_candidates": [],
-                "notes": "found new project",
-            }
-
-            opportunity_prompt = ingest._opportunity_prompt("2026-05-03 12:00", str(logs), memory, inputs, inventory)
-            create_prompt = ingest._create_prompt(
+            create_prompt = ingest._create_candidate_prompt(
                 "2026-05-03 12:00",
                 str(logs),
                 memory,
                 inputs,
                 inventory,
-                opportunities,
-                [{
-                    "title": "Deferred Project",
-                    "kind": "project",
-                    "evidence": ["project.md: split candidate"],
-                    "novelty": "Needs a focused page.",
-                    "confidence": 0.6,
-                    "recommended_action": "create_stub",
-                }],
+                "New Project",
             )
 
-            self.assertIn("Output page opportunity candidates only.", opportunity_prompt)
-            self.assertIn("Mark early but grounded signals as `create_stub`", opportunity_prompt)
-            self.assertIn('"page_candidates"', opportunity_prompt)
-            self.assertIn("If new inputs exist and no candidates are returned", opportunity_prompt)
-            self.assertIn("Output new content-page operations only.", create_prompt)
-            self.assertIn("This pass exists to grow the wiki.", create_prompt)
-            self.assertIn("Prefer 3-8 focused new pages", create_prompt)
-            self.assertIn('"New Project"', create_prompt)
-            self.assertIn("## Deferred Page Candidates From Update", create_prompt)
-            self.assertIn('"Deferred Project"', create_prompt)
-
-    def test_parse_opportunities_validates_candidate_shape(self):
-        payload = {
-            "page_candidates": [{
-                "title": "Project",
-                "kind": "project",
-                "evidence": ["screen/filtered.jsonl: evidence"],
-                "novelty": "new",
-                "confidence": 0.5,
-                "recommended_action": "create_stub",
-            }],
-            "rejected_candidates": [{"title": "Old", "reason": "duplicate"}],
-            "notes": "ok",
-        }
-
-        parsed = ingest._parse_opportunities("```json\n" + json.dumps(payload) + "\n```")
-
-        self.assertEqual(parsed["page_candidates"][0]["title"], "Project")
+            self.assertIn("Output at most one new content-page create operation.", create_prompt)
+            self.assertIn("This agent owns exactly one candidate page.", create_prompt)
+            self.assertIn("## Candidate Page", create_prompt)
+            self.assertIn("`New Project`", create_prompt)
+            self.assertIn("likely future relevance", create_prompt)
+            self.assertIn("empty `create_pages` list", create_prompt)
 
     def test_inventory_prompt_allows_first_run_discovery_without_broad_source_rules(self):
         with tempfile.TemporaryDirectory() as d:
@@ -569,7 +571,7 @@ class MemoryIngestTests(unittest.TestCase):
             self.assertIn("Do not list or read content pages just to build `index.md`", prompt)
             self.assertIn("Do not use shell redirection, append operators, heredocs", prompt)
             self.assertIn("Do not call `write_file` or `edit_file`", prompt)
-            self.assertIn('"update_pages"', prompt)
+            self.assertIn("`update_pages`", prompt)
             self.assertIn("Planning is optional. Keep it compact", prompt)
             self.assertIn("read them together once", prompt)
 

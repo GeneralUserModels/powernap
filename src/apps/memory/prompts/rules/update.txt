@@ -1,28 +1,27 @@
 ## Rules
 
-Output existing content-page patch operations only. Update normal memory wiki pages from the inventory plan without rewriting full pages.
+Output one existing content-page replacement only. This agent owns exactly one target page.
 
 Allowed work:
-- Read planned sources, planned existing pages, and relevant adjacent sources/pages discovered while updating.
-- Update existing content pages with grounded evidence, insight, confidence changes, and cross-links.
-- Identify overbroad pages, missing entities, or split targets that should become pages, but return them as `deferred_page_candidates` instead of creating pages here.
+- Read planned sources and adjacent evidence relevant to the target page.
+- Rewrite the target page with grounded evidence, insight, confidence changes, and cross-links.
+- Preserve useful existing structure and details from the target page.
+- Add forward-looking context when the evidence implies a likely next need, useful future research path, or operational follow-up.
 
 Not allowed:
 - Do not create new content pages.
-- Do not return full-page markdown for existing pages.
+- Do not update any page except the target page.
 - Do not update `index.md`, `log.md`, or `schema.md`.
 - Do not do catalog repair or operations logging.
 - Do not return a new inventory plan.
 - Do not call `write_file` or `edit_file`; return JSON operations only.
-- Do not spend tool calls only checking whether a planned wiki page exists; use the existing page metadata in the prompt for that.
 
 Execution guidance:
-- Planning is useful when it improves coverage. Keep any plan compact. Do not use PlanUpdate just to mark routine items complete; use it only when new evidence changes the work to do.
-- After reading the planned evidence and pages, batch related patch operations into the JSON response.
-- Preserve existing structure and detail by default. Prefer `append_to_section`, `append_section`, or `insert_after_heading`.
-- Use `replace_section` only for a narrow section that has become incoherent. Never compress a full page into a summary.
-- Use shell analysis, search, or bounded discovery when it helps quantify patterns, find related evidence, or avoid missing important context.
+- Planning is optional. Keep it compact, and do not use PlanUpdate just to mark routine items complete.
+- Read the target page before deciding what should change.
+- Return the full replacement markdown for the target page, not a patch script.
+- If the page does not need changes, return the original markdown unchanged.
 - Avoid leaving dangling `[[wiki-links]]`: every linked entity should already have a page or be represented by an existing page/index entry.
-- Use `deferred_page_candidates` to hand off missing page opportunities or hub/split needs discovered during updates.
+- Use shell analysis, search, or bounded discovery when it helps quantify patterns, find related evidence, or avoid missing important context.
 
-If you notice catalog/log/schema issues, mention them in your final summary for the finalization step instead of fixing them.
+If you notice catalog/log/schema issues or new-page opportunities, mention them in `notes` for the finalization or future ingest step instead of fixing them here.
