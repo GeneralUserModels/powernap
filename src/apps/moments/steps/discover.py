@@ -33,6 +33,7 @@ from agent.builder import build_agent, _ensure_sandbox
 from apps.moments.core.candidates import (
     CandidateError,
     MomentCandidate,
+    discovery_state_dir,
     validate_candidate,
     write_candidates_jsonl,
 )
@@ -364,6 +365,7 @@ def _run_tool_agent_for_ideation(
     *,
     instruction: str,
     logs_dir: str,
+    tada_dir: Path,
     model: str,
     api_key: str | None,
     subagent_model: str | None,
@@ -372,7 +374,7 @@ def _run_tool_agent_for_ideation(
     with _BUILD_AGENT_LOCK:
         agent, _ = build_agent(
             model,
-            logs_dir,
+            str(tada_dir),
             api_key=api_key,
             subagent_model=subagent_model,
             subagent_api_key=subagent_api_key,
@@ -578,6 +580,7 @@ def _process_discovery_chunk(
     agent_result = _run_tool_agent_for_ideation(
         instruction=instruction,
         logs_dir=logs_dir,
+        tada_dir=tada_dir,
         model=model,
         api_key=api_key,
         subagent_model=subagent_model,
@@ -684,12 +687,13 @@ def run(
 ) -> str:
     logs_path = Path(logs_dir).resolve()
     logs_dir = str(logs_path)
-    checkpoint_path = logs_path / "moments" / ".last_discovery"
     tada_dir = logs_path.parent / "logs-tada"
-    (logs_path / "moments").mkdir(parents=True, exist_ok=True)
+    state_dir = discovery_state_dir(tada_dir)
+    checkpoint_path = state_dir / ".last_discovery"
     tada_dir.mkdir(parents=True, exist_ok=True)
+    state_dir.mkdir(parents=True, exist_ok=True)
     migrate_moments_to_cadence(tada_dir)
-    _ensure_sandbox([logs_dir])
+    _ensure_sandbox([str(tada_dir.resolve())])
 
     last_discovery = read_checkpoint(checkpoint_path)
     mode = "first_run" if last_discovery is None else "incremental"
@@ -754,7 +758,7 @@ def run(
     if reconcile_notes:
         notes.append(f"reconciliation: {reconcile_notes}")
 
-    candidate_path = write_candidates_jsonl(logs_path, candidates)
+    candidate_path = write_candidates_jsonl(tada_dir, candidates)
     write_checkpoint(checkpoint_path)
     summary = [
         f"Mode: {mode}",

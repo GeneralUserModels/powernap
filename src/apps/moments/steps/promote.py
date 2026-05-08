@@ -19,6 +19,7 @@ from apps.moments.core.incremental import read_checkpoint, write_checkpoint
 from apps.moments.core.candidates import (
     CandidateError,
     MomentCandidate,
+    discovery_state_dir,
     latest_candidate_file,
     parse_promotion_result,
     read_candidate_jsonl,
@@ -105,10 +106,12 @@ def run(
 ) -> str:
     logs_path = Path(logs_dir).resolve()
     tada_path = logs_path.parent / "logs-tada"
-    checkpoint_path = logs_path / "moments" / ".last_promotion"
+    state_dir = discovery_state_dir(tada_path)
+    checkpoint_path = state_dir / ".last_promotion"
     tada_path.mkdir(parents=True, exist_ok=True)
+    state_dir.mkdir(parents=True, exist_ok=True)
     migrate_moments_to_cadence(tada_path)
-    candidate_path = latest_candidate_file(logs_path)
+    candidate_path = latest_candidate_file(tada_path)
     if candidate_path is None:
         return "no candidate files to promote"
     last_promotion = read_checkpoint(checkpoint_path)

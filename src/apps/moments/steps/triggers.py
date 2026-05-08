@@ -71,7 +71,7 @@ def run(
     )
 
     agent, _ = build_agent(
-        model, logs_dir, extra_write_dirs=[str(tada_dir)], api_key=api_key,
+        model, str(tada_dir), api_key=api_key,
         subagent_model=subagent_model, subagent_api_key=subagent_api_key,
     )
     agent.max_rounds = 50

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import datetime
 from pathlib import Path
 
 from server.feature_flags import is_enabled
@@ -78,11 +79,14 @@ async def run_moments_discovery(state) -> None:
 
     # Signal handlers require main thread — pre-init before to_thread.
     from agent.builder import _ensure_sandbox_async
+    from apps.moments.core.candidates import discovery_state_dir
     logs_dir = str(Path(state.config.log_dir).resolve())
-    tada_dir = str(Path(state.config.tada_dir).resolve())
-    await _ensure_sandbox_async([logs_dir, tada_dir])
+    tada_path = Path(state.config.tada_dir).resolve()
+    tada_dir = str(tada_path)
+    await _ensure_sandbox_async([tada_dir])
 
-    last_run_file = Path(state.config.log_dir).resolve() / "moments" / ".discovery_last_run"
+    state_dir = discovery_state_dir(tada_path)
+    last_run_file = state_dir / ".discovery_last_run"
 
     while True:
         try:

@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Request
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 from pydantic import BaseModel
 
 import asyncio
@@ -48,6 +48,71 @@ class ViewEnd(BaseModel):
 
 def _get_tada_dir(request: Request) -> Path:
     return Path(request.app.state.server.config.tada_dir).resolve()
+
+
+def _extract_markdown_title(path: Path) -> str:
+    text = path.read_text(errors="replace")
+    fm = parse_frontmatter(text)
+    title = (fm.get("title") or "").strip().strip("\"'")
+    if title:
+        return title
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("# "):
+            return stripped[2:].strip() or path.stem.replace("-", " ").title()
+    return path.stem.replace("-", " ").title()
+
+
+def _list_research_pages(result_dir: Path) -> list[Path]:
+    research_dir = result_dir / "research"
+    if not research_dir.is_dir():
+        return []
+    base = research_dir.resolve()
+    pages: list[Path] = []
+    for path in research_dir.rglob("*.md"):
+        if not path.is_file():
+            continue
+        rel = path.relative_to(research_dir)
+        if any(part.startswith(".") for part in rel.parts):
+            continue
+        try:
+            path.resolve().relative_to(base)
+        except ValueError:
+            continue
+        pages.append(path)
+
+    def sort_key(path: Path) -> tuple[int, str, str]:
+        rel = path.relative_to(research_dir).as_posix()
+        name = path.name.lower()
+        priority = 0 if name == "index.md" else 1 if name == "overview.md" else 2
+        return (priority, _extract_markdown_title(path).lower(), rel.lower())
+
+    return sorted(pages, key=sort_key)
+
+
+def _page_meta(path: Path, research_dir: Path) -> dict:
+    stat = path.stat()
+    return {
+        "path": path.relative_to(research_dir).as_posix(),
+        "title": _extract_markdown_title(path),
+        "bytes": stat.st_size,
+        "updated_at": datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat(),
+    }
+
+
+def _resolve_research_page(tada_dir: Path, slug: str, page_path: str) -> Path | None:
+    research_dir = tada_dir / "results" / slug / "research"
+    if not research_dir.is_dir():
+        return None
+    base = research_dir.resolve()
+    target = (research_dir / page_path).resolve()
+    try:
+        target.relative_to(base)
+    except ValueError:
+        return None
+    if not target.is_file() or target.suffix.lower() != ".md":
+        return None
+    return target
 
 
 @router.get("/tasks")
@@ -97,8 +162,9 @@ async def list_results(request: Request, include_dismissed: bool = False):
     }
     results = []
     for meta_path in results_dir.glob("*/meta.json"):
-        index_path = meta_path.parent / "index.html"
-        if not index_path.exists():
+        result_dir = meta_path.parent
+        page_paths = _list_research_pages(result_dir)
+        if not page_paths:
             continue
         meta = json.loads(meta_path.read_text())
         slug = meta_path.parent.name
@@ -107,15 +173,13 @@ async def list_results(request: Request, include_dismissed: bool = False):
         if slug_state["dismissed"] and not include_dismissed:
             continue
 
-        # index.html's shell often stays stable across reruns and meta.json's
-        # agent-written completed_at can be hallucinated. Take the freshest
-        # mtime across agent-written output files, skipping user-interaction
-        # artifacts like feedback_*.md that would inflate "last updated".
-        result_dir = meta_path.parent
+        # Take the freshest mtime across generated output files, skipping
+        # user-interaction artifacts like feedback_*.md that would inflate
+        # "last updated".
         output_files = [
             f for f in result_dir.iterdir()
             if f.is_file() and not f.name.startswith("feedback_")
-        ]
+        ] + page_paths
         mtime = max(f.stat().st_mtime for f in output_files)
         completed_at = datetime.fromtimestamp(mtime, tz=timezone.utc).isoformat()
 
@@ -138,6 +202,7 @@ async def list_results(request: Request, include_dismissed: bool = False):
             "cadence": meta.get("cadence") or slug_frontmatter.get(slug, {}).get("cadence", ""),
             "schedule": meta.get("schedule") or slug_frontmatter.get(slug, {}).get("schedule", ""),
             "topic": slug_topics.get(slug, ""),
+            "page_count": len(page_paths),
             "has_feedback": has_feedback,
             "feedback_incorporated": feedback_incorporated,
             **slug_state,
@@ -150,22 +215,24 @@ async def list_results(request: Request, include_dismissed: bool = False):
     return results
 
 
-@router.get("/results/{slug}/index.html")
-async def get_result_html(slug: str, request: Request):
-    """Serve the agent-generated HTML for a completed moment."""
-    path = _get_tada_dir(request) / "results" / slug / "index.html"
-    if not path.exists():
+@router.get("/results/{slug}/pages")
+async def list_result_pages(slug: str, request: Request):
+    """List markdown pages for a completed moment result."""
+    result_dir = _get_tada_dir(request) / "results" / slug
+    pages = _list_research_pages(result_dir)
+    if not pages:
         return JSONResponse({"error": "not found"}, status_code=404)
-    return FileResponse(path, media_type="text/html")
+    research_dir = result_dir / "research"
+    return [_page_meta(path, research_dir) for path in pages]
 
 
-@router.get("/results/{slug}/{filename:path}")
-async def get_result_asset(slug: str, filename: str, request: Request):
-    """Serve additional assets from a result directory."""
-    path = _get_tada_dir(request) / "results" / slug / filename
-    if not path.exists():
+@router.get("/results/{slug}/pages/{page_path:path}")
+async def get_result_page(slug: str, page_path: str, request: Request):
+    """Serve a raw markdown page for a completed moment result."""
+    path = _resolve_research_page(_get_tada_dir(request), slug, page_path)
+    if path is None:
         return JSONResponse({"error": "not found"}, status_code=404)
-    return FileResponse(path)
+    return PlainTextResponse(path.read_text(errors="replace"), media_type="text/markdown")
 
 
 @router.put("/{slug}/state")
@@ -286,7 +353,7 @@ async def rerun_moment(slug: str, request: Request):
 
                 # Signal handlers require main thread — pre-init before to_thread.
                 from agent.builder import _ensure_sandbox_async
-                await _ensure_sandbox_async([logs_dir, str(tada_dir.resolve())])
+                await _ensure_sandbox_async([str(tada_dir.resolve())])
 
                 moment_title = fm.get("title", slug)
                 run_msg = f"Running: {moment_title}"
@@ -354,14 +421,17 @@ FEEDBACK_SYSTEM_PROMPT = (Path(__file__).resolve().parent.parent / "prompts" / "
 def _read_moment_files(result_dir: Path) -> str:
     """Read all moment output files for the feedback system prompt."""
     parts = []
-    for name in ["meta.json", "app.js", "styles.css", "index.html"]:
-        path = result_dir / name
-        if path.exists():
-            content = path.read_text()
-            # Truncate very large files
-            if len(content) > 10000:
-                content = content[:10000] + "\n... (truncated)"
-            parts.append(f"### {name}\n```\n{content}\n```")
+    meta_path = result_dir / "meta.json"
+    if meta_path.exists():
+        content = meta_path.read_text(errors="replace")
+        parts.append(f"### meta.json\n```json\n{content}\n```")
+    research_dir = result_dir / "research"
+    for path in _list_research_pages(result_dir):
+        content = path.read_text(errors="replace")
+        if len(content) > 10000:
+            content = content[:10000] + "\n... (truncated)"
+        rel = path.relative_to(research_dir).as_posix()
+        parts.append(f"### research/{rel}\n```markdown\n{content}\n```")
     return "\n\n".join(parts)
 
 
@@ -401,7 +471,7 @@ async def start_feedback(slug: str, body: FeedbackMessageBody, request: Request)
     tada_dir = _get_tada_dir(request)
     result_dir = tada_dir / "results" / slug
 
-    if not (result_dir / "index.html").exists():
+    if not _list_research_pages(result_dir):
         return JSONResponse({"error": "Moment not found"}, status_code=404)
 
     # If a session for this slug is already in memory (e.g. the user closed the

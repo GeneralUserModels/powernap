@@ -4,7 +4,8 @@ import { useMoments } from "../../hooks/useMoments";
 import { useMomentFeedback } from "../../hooks/useMomentFeedback";
 import { ChatView } from "../ChatView";
 import { FeatureActivityBanner } from "../FeatureActivityBanner";
-import { getServerUrl } from "../../api/client";
+import { getMomentResultPage, getMomentResultPages } from "../../api/client";
+import { MarkdownContent } from "../shared/MarkdownContent";
 
 const CADENCE_OPTIONS = ["scheduled", "once"] as const;
 const REPEAT_OPTIONS = ["daily", "weekly"] as const;
@@ -188,6 +189,284 @@ function RunningIndicator({ pct }: { pct: number }) {
   );
 }
 
+function stripLinkSuffix(href: string): string {
+  return href.split("#", 1)[0].split("?", 1)[0];
+}
+
+function isExternalHref(href?: string): boolean {
+  if (!href) return false;
+  return /^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith("//");
+}
+
+function normalizeResultPath(path: string): string {
+  const parts: string[] = [];
+  for (const part of path.replace(/\\/g, "/").split("/")) {
+    if (!part || part === ".") continue;
+    if (part === "..") parts.pop();
+    else parts.push(part);
+  }
+  return parts.join("/");
+}
+
+function decodeHrefPath(path: string): string {
+  try {
+    return decodeURIComponent(path);
+  } catch {
+    return path;
+  }
+}
+
+function TadaMarkdownResult({ slug }: { slug: string }) {
+  const [pages, setPages] = useState<MomentResultPage[]>([]);
+  const [selectedPath, setSelectedPath] = useState<string | null>(null);
+  const [markdown, setMarkdown] = useState("");
+  const [pageFilter, setPageFilter] = useState("");
+  const [pagesLoading, setPagesLoading] = useState(false);
+  const [pageLoading, setPageLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setPages([]);
+    setSelectedPath(null);
+    setMarkdown("");
+    setPageFilter("");
+    setError(null);
+    setPagesLoading(true);
+    getMomentResultPages(slug)
+      .then((nextPages) => {
+        if (cancelled) return;
+        setPages(nextPages);
+        setSelectedPath(nextPages[0]?.path ?? null);
+      })
+      .catch(() => {
+        if (!cancelled) setError("Could not load pages.");
+      })
+      .finally(() => {
+        if (!cancelled) setPagesLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [slug]);
+
+  useEffect(() => {
+    if (!selectedPath) return;
+    let cancelled = false;
+    setPageLoading(true);
+    setError(null);
+    getMomentResultPage(slug, selectedPath)
+      .then((content) => {
+        if (!cancelled) setMarkdown(content);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setMarkdown("");
+          setError("Could not load this page.");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setPageLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [slug, selectedPath]);
+
+  useEffect(() => {
+    const el = document.querySelector(".tada-result-markdown");
+    if (el instanceof HTMLElement) el.scrollTo({ top: 0 });
+  }, [markdown]);
+
+  const selectedIndex = pages.findIndex((page) => page.path === selectedPath);
+  const selectedPage = selectedIndex >= 0 ? pages[selectedIndex] : null;
+  const visiblePages = useMemo(() => {
+    const q = pageFilter.trim().toLowerCase();
+    if (!q) return pages;
+    return pages.filter((page) =>
+      page.title.toLowerCase().includes(q) ||
+      page.path.toLowerCase().includes(q)
+    );
+  }, [pages, pageFilter]);
+
+  const selectByOffset = useCallback((offset: number) => {
+    if (!pages.length || selectedIndex < 0) return;
+    const nextIndex = Math.min(pages.length - 1, Math.max(0, selectedIndex + offset));
+    setSelectedPath(pages[nextIndex].path);
+  }, [pages, selectedIndex]);
+
+  const resolvePageHref = useCallback((href?: string): string | null => {
+    if (!href || isExternalHref(href)) return null;
+    const hrefPath = stripLinkSuffix(href);
+    if (!hrefPath) return selectedPath;
+
+    const decoded = decodeHrefPath(hrefPath);
+    const baseDir = selectedPath?.split("/").slice(0, -1).join("/") ?? "";
+    const candidates = new Set<string>();
+    candidates.add(normalizeResultPath(decoded.replace(/^\/+/, "")));
+    if (!decoded.startsWith("/")) {
+      candidates.add(normalizeResultPath(`${baseDir}/${decoded}`));
+    }
+    if (!decoded.endsWith(".md")) {
+      candidates.add(normalizeResultPath(`${decoded}.md`));
+      if (!decoded.startsWith("/")) {
+        candidates.add(normalizeResultPath(`${baseDir}/${decoded}.md`));
+      }
+    }
+
+    return pages.find((page) => candidates.has(page.path))?.path ?? null;
+  }, [pages, selectedPath]);
+
+  const handleMarkdownLinkClick = useCallback((event: React.MouseEvent<HTMLAnchorElement>, href?: string) => {
+    if (!href) return;
+    const targetPath = resolvePageHref(href);
+    if (targetPath) {
+      event.preventDefault();
+      setSelectedPath(targetPath);
+      return;
+    }
+    if (!isExternalHref(href)) {
+      event.preventDefault();
+    }
+  }, [resolvePageHref]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target;
+      if (target instanceof HTMLElement) {
+        const tag = target.tagName.toLowerCase();
+        if (tag === "input" || tag === "textarea" || tag === "select" || target.isContentEditable) return;
+      }
+      if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        selectByOffset(-1);
+      } else if (event.key === "ArrowRight") {
+        event.preventDefault();
+        selectByOffset(1);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [selectByOffset]);
+
+  if (pagesLoading) {
+    return (
+      <div className="tada-result-loading">
+        <div className="tada-spinner" />
+        <span>Loading pages...</span>
+      </div>
+    );
+  }
+
+  if (error && pages.length === 0) {
+    return <div className="tada-result-empty">{error}</div>;
+  }
+
+  if (!pages.length) {
+    return <div className="tada-result-empty">No markdown pages found for this Tada.</div>;
+  }
+
+  return (
+    <div className="tada-result-viewer">
+      <aside className="tada-result-rail" aria-label="Result pages">
+        <div className="tada-result-rail-header">
+          <span>Pages</span>
+          <span>{pages.length}</span>
+        </div>
+        <div className="tada-result-search-wrap">
+          <svg className="tada-result-search-icon" width="13" height="13" viewBox="0 0 14 14" fill="none">
+            <circle cx="6" cy="6" r="4.25" stroke="currentColor" strokeWidth="1.3"/>
+            <path d="M9.2 9.2L12 12" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+          </svg>
+          <input
+            className="tada-result-search"
+            value={pageFilter}
+            onChange={(event) => setPageFilter(event.target.value)}
+            placeholder="Find page..."
+            spellCheck={false}
+          />
+        </div>
+        <div className="tada-result-page-list">
+          {visiblePages.map((page) => (
+            <button
+              key={page.path}
+              type="button"
+              className={`tada-result-page${page.path === selectedPath ? " active" : ""}`}
+              onClick={() => setSelectedPath(page.path)}
+            >
+              <span className="tada-result-page-title">{page.title}</span>
+              <span className="tada-result-page-path">{page.path}</span>
+            </button>
+          ))}
+          {visiblePages.length === 0 && (
+            <div className="tada-result-no-pages">No matching pages.</div>
+          )}
+        </div>
+      </aside>
+      <section className="tada-result-main">
+        <div className="tada-result-toolbar">
+          <div className="tada-result-current">
+            <span className="tada-result-current-title">{selectedPage?.title ?? "Untitled"}</span>
+            <span className="tada-result-current-meta">
+              {selectedIndex + 1} of {pages.length}
+            </span>
+          </div>
+          <div className="tada-result-nav">
+            <button
+              type="button"
+              className="tada-result-nav-btn"
+              onClick={() => selectByOffset(-1)}
+              disabled={selectedIndex <= 0}
+              title="Previous page"
+            >
+              <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
+                <path d="M8.5 3L4.5 7l4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            </button>
+            <button
+              type="button"
+              className="tada-result-nav-btn"
+              onClick={() => selectByOffset(1)}
+              disabled={selectedIndex < 0 || selectedIndex >= pages.length - 1}
+              title="Next page"
+            >
+              <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
+                <path d="M5.5 3l4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+        {pageLoading ? (
+          <div className="tada-result-loading">
+            <div className="tada-spinner" />
+            <span>Loading page...</span>
+          </div>
+        ) : error ? (
+          <div className="tada-result-empty">{error}</div>
+        ) : (
+          <MarkdownContent
+            className="memex-content tada-result-markdown"
+            markdown={markdown}
+            components={{
+              a: ({ href, children }) => {
+                const targetPath = resolvePageHref(href);
+                const external = isExternalHref(href);
+                return (
+                  <a
+                    href={href}
+                    target={external ? "_blank" : undefined}
+                    rel={external ? "noopener noreferrer" : undefined}
+                    data-tada-page-link={targetPath ? "true" : undefined}
+                    onClick={(event) => handleMarkdownLinkClick(event, href)}
+                  >
+                    {children}
+                  </a>
+                );
+              },
+            }}
+          />
+        )}
+      </section>
+    </div>
+  );
+}
+
 export function TadaView() {
   const { state } = useAppContext();
   const discoveryActivity = state.agentActivities["moments_discovery"];
@@ -216,7 +495,6 @@ export function TadaView() {
     rerunning, rerunFailed,
   } = useMoments();
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
-  const [resultUrl, setResultUrl] = useState<string | null>(null);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [editingSlug, setEditingSlug] = useState<string | null>(null);
   const [editCadence, setEditCadence] = useState("");
@@ -250,23 +528,18 @@ export function TadaView() {
     () => showDismissed ? [] : visibleResults.filter((r) => runningSlugs.has(r.slug)),
     [showDismissed, visibleResults, runningSlugs],
   );
-  const unreadItems = useMemo(
-    () => showDismissed
-      ? []
-      : rawUnreadItems.filter((r) => !runningSlugs.has(r.slug)),
-    [showDismissed, rawUnreadItems, runningSlugs],
-  );
   const pinnedItems = useMemo(
     () => showDismissed
       ? []
-      : visibleResults.filter((r) => r.pinned && !r.dismissed && !runningSlugs.has(r.slug) && !isUnread(r)),
+      : visibleResults
+          .filter((r) => r.pinned && !r.dismissed && !runningSlugs.has(r.slug))
+          .sort((a, b) => Number(isUnread(b)) - Number(isUnread(a))),
     [showDismissed, visibleResults, runningSlugs], // eslint-disable-line react-hooks/exhaustive-deps
   );
   const topicResults = useMemo(() => {
     if (showDismissed) return visibleResults;
     return visibleResults.filter((r) =>
       !runningSlugs.has(r.slug) &&
-      !isUnread(r) &&
       !(r.pinned && !r.dismissed)
     );
   }, [showDismissed, visibleResults, runningSlugs]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -282,6 +555,9 @@ export function TadaView() {
         const aRunning = runActivitiesBySlug[a.slug] ? 1 : 0;
         const bRunning = runActivitiesBySlug[b.slug] ? 1 : 0;
         if (aRunning !== bRunning) return bRunning - aRunning;
+        const aUnread = isUnread(a) ? 1 : 0;
+        const bUnread = isUnread(b) ? 1 : 0;
+        if (aUnread !== bUnread) return bUnread - aUnread;
         return (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0);
       });
     }
@@ -351,14 +627,12 @@ export function TadaView() {
 
   const handleCardClick = (slug: string, openFeedback = false) => {
     setSelectedSlug(slug);
-    setResultUrl(`${getServerUrl()}/api/moments/results/${slug}/index.html`);
     setFeedbackOpen(openFeedback);
   };
 
   const handleBack = () => {
     if (feedback.active) feedback.endConversation();
     setSelectedSlug(null);
-    setResultUrl(null);
     setFeedbackOpen(false);
   };
 
@@ -401,7 +675,7 @@ export function TadaView() {
   const effectiveCadence = (r: MomentResult) => r.cadence_override || r.cadence;
 
   // Detail view
-  if (selectedSlug && resultUrl) {
+  if (selectedSlug) {
     const selected = results.find((r) => r.slug === selectedSlug);
     return (
       <div id="tada-view" className="view active">
@@ -497,11 +771,7 @@ export function TadaView() {
         </div>
         <div className={`tada-detail-split${feedbackOpen ? "" : " tada-detail-split--full"}`}>
           <div className="tada-detail glass-card">
-            <iframe
-              src={resultUrl}
-              sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox"
-              style={{ width: "100%", height: "100%", border: "none", borderRadius: "var(--r-md)" }}
-            />
+            <TadaMarkdownResult slug={selectedSlug} />
           </div>
           {feedbackOpen && (
             <div className="tada-feedback-panel glass-card">
@@ -590,7 +860,7 @@ export function TadaView() {
               <div className="tada-spinner" />
               <span className="tada-empty-line">Loading tadas…</span>
             </div>
-          ) : topicOrder.length === 0 && totalRunning === 0 && unreadItems.length === 0 && pinnedItems.length === 0 ? (
+          ) : topicOrder.length === 0 && totalRunning === 0 && pinnedItems.length === 0 ? (
             query.trim() ? (
               <div className="tada-empty">
                 <span className="tada-empty-line">No matches for "{query.trim()}"</span>
@@ -648,18 +918,6 @@ export function TadaView() {
                   )}
                 </section>
               )}
-              {!showDismissed && unreadItems.length > 0 && (
-                <ChapterSection
-                  keyName="__unread"
-                  label="Unread"
-                  variant="unread"
-                  items={unreadItems}
-                  isOpen={!closedTopics.has("__unread")}
-                  onToggle={() => toggleTopic("__unread")}
-                  renderEntry={renderEntry}
-                  isUnreadFn={isUnread}
-                />
-              )}
               {!showDismissed && pinnedItems.length > 0 && (
                 <ChapterSection
                   keyName="__pinned"
@@ -695,7 +953,7 @@ export function TadaView() {
           <div style={{ minHeight: 24, flexShrink: 0 }} />
         </main>
 
-        {!loading && (topicOrder.length > 0 || (!showDismissed && (totalRunning > 0 || pinnedItems.length > 0 || unreadItems.length > 0))) && (
+        {!loading && (topicOrder.length > 0 || (!showDismissed && (totalRunning > 0 || pinnedItems.length > 0))) && (
           <aside className="tada-toc" aria-label="Jump to section">
             <div className="tada-toc-label">Jump to</div>
             {!showDismissed && totalRunning > 0 && (
@@ -709,21 +967,10 @@ export function TadaView() {
                 <span className="tada-toc-item-count">{totalRunning}</span>
               </button>
             )}
-            {!showDismissed && unreadItems.length > 0 && (
-              <button
-                type="button"
-                className="tada-toc-item tada-toc-item--unread"
-                onClick={() => jumpToChapter("__unread")}
-              >
-                <span className="tada-toc-item-glyph tada-toc-item-glyph--dot" />
-                <span className="tada-toc-item-name">Unread</span>
-                <span className="tada-toc-item-count">{unreadItems.length}</span>
-              </button>
-            )}
             {!showDismissed && pinnedItems.length > 0 && (
               <button
                 type="button"
-                className="tada-toc-item tada-toc-item--pinned"
+                className={`tada-toc-item tada-toc-item--pinned${pinnedItems.some(isUnread) ? " tada-toc-item--has-unread" : ""}`}
                 onClick={() => jumpToChapter("__pinned")}
               >
                 <svg className="tada-toc-item-glyph" width="9" height="9" viewBox="0 0 14 14" fill="none">
@@ -732,22 +979,31 @@ export function TadaView() {
                 </svg>
                 <span className="tada-toc-item-name">Pinned</span>
                 <span className="tada-toc-item-count">{pinnedItems.length}</span>
+                {pinnedItems.some(isUnread) && (
+                  <span className="tada-toc-item-unread">{pinnedItems.filter(isUnread).length} new</span>
+                )}
               </button>
             )}
-            {(totalRunning > 0 || unreadItems.length > 0 || pinnedItems.length > 0) && topicOrder.length > 0 && (
+            {(totalRunning > 0 || pinnedItems.length > 0) && topicOrder.length > 0 && (
               <div className="tada-toc-divider" aria-hidden="true" />
             )}
-            {topicOrder.map((topic) => (
-              <button
-                key={topic}
-                type="button"
-                className="tada-toc-item"
-                onClick={() => jumpToChapter(topic)}
-              >
-                <span className="tada-toc-item-name">{titleizeTopic(topic)}</span>
-                <span className="tada-toc-item-count">{groupedByTopic[topic].length}</span>
-              </button>
-            ))}
+            {topicOrder.map((topic) => {
+              const unreadCount = groupedByTopic[topic].filter(isUnread).length;
+              return (
+                <button
+                  key={topic}
+                  type="button"
+                  className={`tada-toc-item${unreadCount > 0 ? " tada-toc-item--has-unread" : ""}`}
+                  onClick={() => jumpToChapter(topic)}
+                >
+                  <span className="tada-toc-item-name">{titleizeTopic(topic)}</span>
+                  <span className="tada-toc-item-count">{groupedByTopic[topic].length}</span>
+                  {unreadCount > 0 && (
+                    <span className="tada-toc-item-unread">{unreadCount} new</span>
+                  )}
+                </button>
+              );
+            })}
           </aside>
         )}
       </div>
@@ -776,6 +1032,7 @@ export function TadaView() {
                   </svg>
                 )}
                 <span className="tada-card-title-text">{r.title}</span>
+                {cardUnread && <span className="tada-unread-badge">New</span>}
                 {r.dismissed && <span className="tada-dismissed-badge">Dismissed</span>}
                 {rerunFailed.has(r.slug) && <span className="tada-rerun-failed-badge">Rerun failed</span>}
               </h3>
@@ -916,7 +1173,7 @@ interface ChapterSectionProps {
   items: MomentResult[];
   isOpen: boolean;
   unreadCount?: number;
-  variant?: "pinned" | "unread" | "topic";
+  variant?: "pinned" | "topic";
   onToggle: () => void;
   renderEntry: (r: MomentResult, i: number) => JSX.Element;
   isUnreadFn: (r: MomentResult) => boolean;
@@ -938,10 +1195,9 @@ function ChapterSection({ keyName, label, items, isOpen, unreadCount, variant = 
                 stroke="currentColor" fill="currentColor" strokeWidth="1" strokeLinejoin="round"/>
             </svg>
           )}
-          {variant === "unread" && <span className="tada-chapter-glyph tada-chapter-glyph--dot" />}
           {label}
           <span className="tada-chapter-count">{items.length}</span>
-          {variant === "topic" && computedUnread > 0 && (
+          {computedUnread > 0 && (
             <span className="tada-chapter-unread">{computedUnread} new</span>
           )}
         </span>

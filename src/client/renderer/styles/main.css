@@ -1616,19 +1616,34 @@ button, input, select, textarea, canvas, a, label,
   opacity: 1;
 }
 
-.tada-toc-item--unread .tada-toc-item-name,
 .tada-toc-item--running .tada-toc-item-name,
-.tada-toc-item--pinned .tada-toc-item-name {
+.tada-toc-item--pinned .tada-toc-item-name,
+.tada-toc-item--has-unread .tada-toc-item-name {
   color: var(--sage);
   font-weight: 500;
 }
 
-.tada-toc-item--unread .tada-toc-item-count,
 .tada-toc-item--running .tada-toc-item-count,
-.tada-toc-item--pinned .tada-toc-item-count {
+.tada-toc-item--pinned .tada-toc-item-count,
+.tada-toc-item--has-unread .tada-toc-item-count {
   color: var(--sage);
   font-weight: 600;
   opacity: 0.85;
+}
+
+.tada-toc-item-unread {
+  flex-shrink: 0;
+  margin-top: 1px;
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: rgba(var(--sage-rgb), 0.10);
+  color: var(--sage);
+  font-size: 9px;
+  font-weight: 650;
+  line-height: 1.3;
+  letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .tada-toc-divider {
@@ -1650,7 +1665,6 @@ button, input, select, textarea, canvas, a, label,
 .tada-chapter:first-of-type { margin-top: 4px; }
 
 .tada-chapter--running + .tada-chapter,
-.tada-chapter--unread + .tada-chapter,
 .tada-chapter--pinned + .tada-chapter {
   margin-top: 24px;
 }
@@ -1725,8 +1739,7 @@ button, input, select, textarea, canvas, a, label,
 }
 
 .tada-chapter--running .tada-chapter-name,
-.tada-chapter--pinned .tada-chapter-name,
-.tada-chapter--unread .tada-chapter-name {
+.tada-chapter--pinned .tada-chapter-name {
   color: var(--sage);
 }
 
@@ -1741,8 +1754,7 @@ button, input, select, textarea, canvas, a, label,
 }
 
 .tada-chapter--pinned .tada-chapter-count,
-.tada-chapter--running .tada-chapter-count,
-.tada-chapter--unread .tada-chapter-count {
+.tada-chapter--running .tada-chapter-count {
   color: var(--sage);
   opacity: 0.7;
 }
@@ -1782,6 +1794,11 @@ button, input, select, textarea, canvas, a, label,
   align-items: stretch;
 }
 
+.tada-chapter--running .tada-chapter-body {
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
 /* ── Entry (built on .glass-card) ─────────────────────────── */
 
 .tada-entry {
@@ -1789,11 +1806,20 @@ button, input, select, textarea, canvas, a, label,
   padding: 18px 20px 14px;
   border-radius: var(--r-md);
   border-left: 2px solid transparent;
+  background: rgba(255, 255, 255, 0.22);
   animation: fadeSlideIn 0.25s ease both;
   transition: box-shadow 0.2s, border-color 0.2s, transform 0.15s, background 0.2s;
   display: flex;
   flex-direction: column;
   min-width: 0;
+}
+
+.tada-entry:not(.tada-entry--unread):not(.tada-entry--running):not(.tada-entry--dismissed) {
+  border-color: rgba(var(--sage-rgb), 0.16);
+  border-left-color: transparent;
+  box-shadow:
+    0 1px 2px rgba(var(--sage-rgb), 0.04),
+    inset 0 1px 0 rgba(255, 255, 255, 0.32);
 }
 
 .tada-entry:hover {
@@ -1803,6 +1829,11 @@ button, input, select, textarea, canvas, a, label,
     inset 0 1px 0 rgba(255, 255, 255, 0.6);
   border-color: rgba(var(--sage-rgb), 0.28);
   transform: translateY(-1px);
+}
+
+.tada-entry:not(.tada-entry--unread):not(.tada-entry--running):not(.tada-entry--dismissed):hover {
+  background: rgba(255, 255, 255, 0.32);
+  border-left-color: transparent;
 }
 
 /* Inner header (title — full width) */
@@ -1963,18 +1994,46 @@ button, input, select, textarea, canvas, a, label,
   align-items: center;
 }
 
-/* Unread: sage left border accent (matches existing app vocabulary) */
+/* Unread: stronger white surface so new tadas sit visually up front. */
 .tada-entry--unread {
+  border-color: rgba(255, 255, 255, 0.86);
   border-left-color: var(--sage);
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow:
+    0 2px 6px rgba(var(--sage-rgb), 0.08),
+    0 12px 28px rgba(var(--sage-rgb), 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.72);
 }
 .tada-entry--unread .tada-card-title {
   color: var(--text);
 }
 
-/* Pinned: sage left border + faint sage tint */
+/* Pinned read cards keep the receded sage-edge treatment. */
 .tada-entry--pinned {
+  border-left-color: transparent;
+  background: rgba(255, 255, 255, 0.26);
+}
+
+.tada-entry--pinned.tada-entry--unread {
+  border-color: rgba(255, 255, 255, 0.86);
   border-left-color: var(--sage);
-  background: rgba(var(--sage-rgb), 0.045);
+  background: rgba(255, 255, 255, 0.90);
+}
+
+.tada-unread-badge {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  align-self: center;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(var(--sage-rgb), 0.12);
+  color: var(--sage);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  line-height: 1.35;
+  text-transform: uppercase;
 }
 
 .tada-unread-dot {
@@ -2113,13 +2172,7 @@ button, input, select, textarea, canvas, a, label,
   overflow: hidden;
 }
 
-.tada-detail iframe {
-  flex: 1;
-  min-height: 500px;
-  box-shadow: inset 0 1px 3px rgba(0,0,0,0.04);
-}
-
-/* ── Detail Split (iframe + feedback panel) ───────────── */
+/* ── Detail Split (markdown result + feedback panel) ──── */
 
 .tada-detail-split {
   display: flex;
@@ -2144,6 +2197,238 @@ button, input, select, textarea, canvas, a, label,
   flex-direction: column;
   padding: 12px;
   overflow: hidden;
+}
+
+/* ── Markdown result viewer ───────────────────────────── */
+
+.tada-result-viewer {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 220px;
+  gap: 0;
+  overflow: hidden;
+}
+
+.tada-result-rail {
+  grid-column: 2;
+  grid-row: 1;
+  min-width: 0;
+  border-left: 1px solid rgba(var(--sage-rgb), 0.12);
+  padding: 14px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.tada-result-rail-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 4px;
+  color: var(--text-tertiary);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.tada-result-search-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.tada-result-search-icon {
+  position: absolute;
+  left: 10px;
+  color: var(--text-tertiary);
+  pointer-events: none;
+}
+
+.tada-result-search {
+  width: 100%;
+  height: 30px;
+  padding: 6px 10px 6px 30px;
+  border: 1px solid rgba(var(--sage-rgb), 0.12);
+  border-radius: var(--r-sm);
+  background: rgba(255, 255, 255, 0.58);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  outline: none;
+  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
+}
+
+.tada-result-search:focus {
+  background: rgba(255, 255, 255, 0.9);
+  border-color: rgba(var(--sage-rgb), 0.38);
+  box-shadow: 0 0 0 3px rgba(var(--sage-rgb), 0.08);
+}
+
+.tada-result-page-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-right: 2px;
+}
+
+.tada-result-page {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  min-width: 0;
+  padding: 8px 9px;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: inherit;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.tada-result-page:hover {
+  background: rgba(var(--sage-rgb), 0.07);
+  color: var(--text);
+}
+
+.tada-result-page.active {
+  background: rgba(255, 255, 255, 0.72);
+  border-color: rgba(var(--sage-rgb), 0.20);
+  color: var(--text);
+}
+
+.tada-result-page-title {
+  max-width: 100%;
+  font-size: 12px;
+  font-weight: 620;
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tada-result-page-path {
+  max-width: 100%;
+  font-size: 10px;
+  color: var(--text-tertiary);
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tada-result-no-pages,
+.tada-result-empty,
+.tada-result-loading {
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+
+.tada-result-empty,
+.tada-result-loading {
+  flex: 1;
+  min-height: 280px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  text-align: center;
+}
+
+.tada-result-main {
+  grid-column: 1;
+  grid-row: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.tada-result-toolbar {
+  flex-shrink: 0;
+  min-height: 48px;
+  padding: 10px 14px;
+  border-bottom: 1px solid rgba(var(--sage-rgb), 0.12);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.tada-result-current {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.tada-result-current-title {
+  color: var(--text);
+  font-size: 12.5px;
+  font-weight: 650;
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tada-result-current-meta {
+  color: var(--text-tertiary);
+  font-size: 10px;
+  font-weight: 550;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.tada-result-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.tada-result-nav-btn {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, opacity 0.15s;
+}
+
+.tada-result-nav-btn:hover:not(:disabled) {
+  background: rgba(var(--sage-rgb), 0.10);
+  color: var(--text);
+}
+
+.tada-result-nav-btn:disabled {
+  cursor: default;
+  opacity: 0.35;
+}
+
+.memex-content.tada-result-markdown {
+  flex: 1;
+  min-height: 0;
+  padding: 18px 26px 28px 48px;
 }
 
 
@@ -2437,9 +2722,70 @@ button, input, select, textarea, canvas, a, label,
 
 .tada-entry--running {
   border-left-color: var(--sage);
+  border-color: rgba(255, 255, 255, 0.82);
+  border-left-color: var(--sage);
+  background: rgba(255, 255, 255, 0.84);
   cursor: default;
   pointer-events: none;
   opacity: 0.78;
+}
+
+.tada-chapter--running .tada-entry {
+  padding: 10px 12px;
+  border-left-width: 2px;
+  min-height: 0;
+  box-shadow:
+    0 1px 3px var(--glass-shadow),
+    inset 0 1px 0 rgba(255, 255, 255, 0.45);
+}
+
+.tada-chapter--running .tada-entry .tada-card-header {
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.tada-chapter--running .tada-entry .tada-card-title {
+  font-size: 12.5px;
+  line-height: 1.25;
+  font-weight: 600;
+}
+
+.tada-chapter--running .tada-entry .tada-card-title-text {
+  -webkit-line-clamp: 1;
+}
+
+.tada-chapter--running .tada-entry .tada-card-schedule {
+  margin-bottom: 6px;
+  font-size: 10px;
+}
+
+.tada-chapter--running .tada-entry .tada-card-frequency {
+  font-size: 9.5px;
+}
+
+.tada-chapter--running .tada-entry .tada-card-time,
+.tada-chapter--running .tada-entry .tada-card-date {
+  font-size: 10px;
+}
+
+.tada-chapter--running .tada-entry .tada-card-desc,
+.tada-chapter--running .tada-entry .tada-card-footer {
+  display: none;
+}
+
+.tada-chapter--running .tada-card-running {
+  margin-top: 4px;
+  padding-top: 6px;
+  gap: 4px;
+}
+
+.tada-chapter--running .tada-card-running-row {
+  gap: 6px;
+}
+
+.tada-chapter--running .tada-card-running-text,
+.tada-chapter--running .tada-card-running-pct {
+  font-size: 10px;
 }
 
 .tada-entry--running:hover {

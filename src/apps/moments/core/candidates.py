@@ -202,12 +202,16 @@ def parse_promotion_result(result: str, candidates: list[MomentCandidate]) -> tu
     return promoted, rejected
 
 
-def candidates_dir(logs_path: Path) -> Path:
-    return logs_path / "moments" / "candidates"
+def discovery_state_dir(tada_path: Path) -> Path:
+    return tada_path / "_discovery"
 
 
-def write_candidates_jsonl(logs_path: Path, candidates: list[MomentCandidate]) -> Path:
-    out_dir = candidates_dir(logs_path)
+def candidates_dir(tada_path: Path) -> Path:
+    return discovery_state_dir(tada_path) / "candidates"
+
+
+def write_candidates_jsonl(tada_path: Path, candidates: list[MomentCandidate]) -> Path:
+    out_dir = candidates_dir(tada_path)
     out_dir.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     out_path = out_dir / f"{timestamp}.jsonl"
@@ -225,8 +229,8 @@ def read_candidate_jsonl(path: Path) -> list[MomentCandidate]:
     return candidates
 
 
-def latest_candidate_file(logs_path: Path) -> Path | None:
-    files = sorted(candidates_dir(logs_path).glob("*.jsonl"))
+def latest_candidate_file(tada_path: Path) -> Path | None:
+    files = sorted(candidates_dir(tada_path).glob("*.jsonl"))
     return files[-1] if files else None
 
 

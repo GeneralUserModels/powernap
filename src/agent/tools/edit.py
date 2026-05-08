@@ -1,10 +1,10 @@
-from pathlib import Path
-
 from .base_tool import BaseTool
+from .sandbox_paths import assert_write_allowed, resolve_path
 
 
 class EditTool(BaseTool):
-    def __init__(self):
+    def __init__(self, allowed_paths=None):
+        self.allowed_paths = allowed_paths
         super().__init__("edit_file", "Replace exact text in file.",
             {
                 "type": "object",
@@ -27,8 +27,8 @@ class EditTool(BaseTool):
         )
 
     def run(self, path: str, old_text: str, new_text: str):
-        workdir = Path.cwd()
-        resolved = (workdir / path).resolve()
+        resolved = resolve_path(path)
+        assert_write_allowed(resolved, self.allowed_paths)
         content = resolved.read_text()
         count = content.count(old_text)
         if count == 0:

@@ -88,7 +88,12 @@ def _next_run_time(schedule: str) -> datetime | None:
 
 
 def load_run_history(results_dir: Path) -> dict[str, float]:
-    """Load last successful run timestamp per slug from _runs.jsonl."""
+    """Load last completed run timestamp per slug from _runs.jsonl.
+
+    Failed attempts count as completed scheduler attempts. Otherwise a broken
+    one-shot or scheduled moment gets re-queued every scan until it happens to
+    succeed, which can leave Tada generation effectively running forever.
+    """
     runs_file = results_dir / "_runs.jsonl"
     history: dict[str, float] = {}
     if not runs_file.exists():
@@ -97,7 +102,7 @@ def load_run_history(results_dir: Path) -> dict[str, float]:
         if not line.strip():
             continue
         entry = json.loads(line)
-        if entry.get("status") == "success":
+        if entry.get("status") in {"success", "failed"}:
             history[entry["slug"]] = entry["completed_at"]
     return history
 
@@ -246,8 +251,10 @@ async def _execute_one_moment(
         async with state.moments_runs_lock:
             save_run(results_dir, slug, started_at, completed_at, "success" if success else "failed")
 
-        if success:
+        if slug_state.get("pending_update"):
             clear_pending_update(tada_dir, slug)
+
+        if success:
             meta_path = Path(output_dir) / "meta.json"
             meta = json.loads(meta_path.read_text()) if meta_path.exists() else {}
             result_dir = Path(output_dir)
@@ -286,7 +293,7 @@ async def run_moments_scheduler(state) -> None:
     from agent.builder import _ensure_sandbox_async
     logs_dir = str(Path(state.config.log_dir).resolve())
     tada_dir = str(Path(state.config.tada_dir).resolve())
-    await _ensure_sandbox_async([logs_dir, tada_dir])
+    await _ensure_sandbox_async([tada_dir])
 
     while True:
         try:

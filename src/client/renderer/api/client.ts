@@ -44,6 +44,12 @@ export const getMomentsTasks = () => request("GET", "/api/moments/tasks");
 export const getMomentsResults = (includeDismissed = false) =>
   request("GET", `/api/moments/results${includeDismissed ? "?include_dismissed=true" : ""}`) as Promise<MomentResult[]>;
 
+export const getMomentResultPages = (slug: string) =>
+  request("GET", `/api/moments/results/${encodeURIComponent(slug)}/pages`) as Promise<MomentResultPage[]>;
+
+export const getMomentResultPage = (slug: string, path: string) =>
+  requestText("GET", `/api/moments/results/${encodeURIComponent(slug)}/pages/${path.split("/").map(encodeURIComponent).join("/")}`);
+
 export const updateMomentState = (slug: string, data: { dismissed?: boolean; pinned?: boolean; thumbs?: "up" | "down" | null }) =>
   request("PUT", `/api/moments/${slug}/state`, data);
 
