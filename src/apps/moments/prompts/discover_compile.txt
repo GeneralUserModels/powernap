@@ -49,3 +49,5 @@ When compiling, keep candidate fields grounded in the idea card:
 - `source_paths` is for pointer-only references, such as `screen/filtered.jsonl:123`.
 - `why_now` should connect the evidence to the upcoming use, not only restate recent activity.
 - `user_value` should name the concrete benefit: clearer decision, stronger meeting, better draft, reduced missed context, or saved synthesis time.
+
+Do not introduce new deadlines, venues, entities, collaborator feedback, causal claims, or implementation requirements while compiling. If a field needs a fact that is not in the idea card, either omit the fact, phrase it as something for the executor to verify, or reject the idea as under-specified. Keep inferred connections explicit and modest; do not turn correlation in the activity stream into a claimed cause.

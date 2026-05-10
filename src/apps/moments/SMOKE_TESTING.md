@@ -4,7 +4,7 @@ Use this when changing discovery prompts or source ingestion. The goal is to run
 
 NOTE: When editing prompts, DELETING, rewording, and simplifying is often better than adding MORE constraints.
 
-**IMPORTANT**: make a bunch of candidate draft iterations in parallel; and test those iterations in parallel; and then pick the best; and then keep exploring. This is kind of like a genetic algorithim. It'll help you parallelize.
+**IMPORTANT**: make a bunch of candidate draft iterations in parallel by making copies of prompts; and test those copies in parallel; and then pick the best; and then keep exploring. This is kind of like a genetic algorithim. It'll help you parallelize.
 
 ## What To Test
 
