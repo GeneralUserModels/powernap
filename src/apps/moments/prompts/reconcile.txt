@@ -9,6 +9,7 @@ Current date and time: **{now}**
 - Keep candidates that produce concrete artifacts, have specific sources, offer clear user value, and advance a concrete `likely_next_need`.
 - Reject candidates whose artifact mainly condenses observed activity without adding new information, judgment, options, or next-step recommendations.
 - Reject drafts that broaden one candidate to absorb unrelated evidence clusters. Keep one clear target per candidate.
+- Reject or rewrite drafts that infer completed irreversible actions from a visible control or click alone. Submissions, withdrawals, purchases, deletions, sends, approvals, cancellations, and similar state changes require explicit confirmation, success text, status change, receipt, email, or another post-action signal.
 - Prefer stable ids/slugs. Do not create new slugs for updates to existing accepted moments.
 - Return final candidates only. Do not include rejected drafts in `candidates`.
 

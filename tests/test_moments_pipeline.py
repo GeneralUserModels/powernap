@@ -108,14 +108,14 @@ class _FakeExecuteAgent:
     def run(self, messages, **kwargs):
         self.messages.append(messages)
         prompt = messages[0]["content"]
-        self.test_case.assertIn("/research", prompt)
+        self.test_case.assertIn("/output", prompt)
         self.test_case.assertIn("Include an `index.md` page", prompt)
         self.test_case.assertIn("Use markdown links liberally", prompt)
         self.test_case.assertIn("Do not build a website or app", prompt)
-        research_dir = self.output_dir / "research"
-        research_dir.mkdir(parents=True)
-        (research_dir / "evidence.md").write_text("# Evidence\n\nA cited [source](https://example.com).\n")
-        (research_dir / "synthesis.md").write_text("# Synthesis\n\nUseful researched findings.\n")
+        output_pages_dir = self.output_dir / "output"
+        output_pages_dir.mkdir(parents=True)
+        (output_pages_dir / "evidence.md").write_text("# Evidence\n\nA cited [source](https://example.com).\n")
+        (output_pages_dir / "synthesis.md").write_text("# Synthesis\n\nUseful researched findings.\n")
         return "research complete"
 
 
@@ -213,32 +213,32 @@ class MomentsPipelineTests(unittest.TestCase):
 
             self.assertEqual(load_run_history(results), {"broken-once": 120.0})
 
-    def test_research_pages_are_ordered_and_titled(self):
+    def test_output_pages_are_ordered_and_titled(self):
         with tempfile.TemporaryDirectory() as d:
             result_dir = Path(d)
-            research = result_dir / "research"
-            research.mkdir()
-            (research / "z-notes.md").write_text("# Zebra Notes\n\nBody\n")
-            (research / "overview.md").write_text("---\ntitle: Brief Overview\n---\n\nBody\n")
-            (research / "index.md").write_text("# Start Here\n\nBody\n")
+            output_pages = result_dir / "output"
+            output_pages.mkdir()
+            (output_pages / "z-notes.md").write_text("# Zebra Notes\n\nBody\n")
+            (output_pages / "overview.md").write_text("---\ntitle: Brief Overview\n---\n\nBody\n")
+            (output_pages / "index.md").write_text("# Start Here\n\nBody\n")
 
-            pages = moments_routes._list_research_pages(result_dir)
+            pages = moments_routes._list_output_pages(result_dir)
 
             self.assertEqual([p.name for p in pages], ["index.md", "overview.md", "z-notes.md"])
-            self.assertEqual(moments_routes._page_meta(pages[1], research)["title"], "Brief Overview")
+            self.assertEqual(moments_routes._page_meta(pages[1], output_pages)["title"], "Brief Overview")
 
-    def test_resolve_research_page_rejects_traversal(self):
+    def test_resolve_output_page_rejects_traversal(self):
         with tempfile.TemporaryDirectory() as d:
             tada = Path(d) / "logs-tada"
-            research = tada / "results" / "brief" / "research"
-            research.mkdir(parents=True)
-            safe = research / "safe.md"
+            output_pages = tada / "results" / "brief" / "output"
+            output_pages.mkdir(parents=True)
+            safe = output_pages / "safe.md"
             safe.write_text("# Safe\n")
             (tada / "results" / "brief" / "outside.md").write_text("# Outside\n")
 
-            self.assertEqual(moments_routes._resolve_research_page(tada, "brief", "safe.md"), safe.resolve())
-            self.assertIsNone(moments_routes._resolve_research_page(tada, "brief", "../outside.md"))
-            self.assertIsNone(moments_routes._resolve_research_page(tada, "brief", "/etc/passwd"))
+            self.assertEqual(moments_routes._resolve_output_page(tada, "brief", "safe.md"), safe.resolve())
+            self.assertIsNone(moments_routes._resolve_output_page(tada, "brief", "../outside.md"))
+            self.assertIsNone(moments_routes._resolve_output_page(tada, "brief", "/etc/passwd"))
 
     def test_list_results_includes_markdown_backed_results(self):
         with tempfile.TemporaryDirectory() as d:
@@ -256,10 +256,10 @@ class MomentsPipelineTests(unittest.TestCase):
                 "---\n\nBody\n"
             )
             result_dir = tada / "results" / "strategy-brief"
-            research = result_dir / "research"
-            research.mkdir(parents=True)
-            (research / "evidence.md").write_text("# Evidence\n")
-            (research / "synthesis.md").write_text("# Synthesis\n")
+            output_pages = result_dir / "output"
+            output_pages.mkdir(parents=True)
+            (output_pages / "evidence.md").write_text("# Evidence\n")
+            (output_pages / "synthesis.md").write_text("# Synthesis\n")
             (result_dir / "meta.json").write_text(json.dumps({
                 "title": "Strategy Brief",
                 "description": "Markdown result.",
@@ -315,8 +315,8 @@ class MomentsPipelineTests(unittest.TestCase):
                 success = execute.run(str(task_path), str(output_dir), str(logs), model="fake")
 
             self.assertTrue(success)
-            self.assertGreaterEqual(len(list((output_dir / "research").glob("*.md"))), 2)
-            index = output_dir / "research" / "index.md"
+            self.assertGreaterEqual(len(list((output_dir / "output").glob("*.md"))), 2)
+            index = output_dir / "output" / "index.md"
             self.assertTrue(index.exists())
             self.assertIn("[Evidence](evidence.md)", index.read_text())
             self.assertTrue((output_dir / "meta.json").exists())
@@ -355,7 +355,7 @@ class MomentsPipelineTests(unittest.TestCase):
             self.assertFalse(success)
             self.assertFalse(output_dir.exists())
             self.assertEqual(len(research_agent.messages), 2)
-            self.assertIn("research folder is not ready", research_agent.messages[1][0]["content"])
+            self.assertIn("output folder is not ready", research_agent.messages[1][0]["content"])
 
     def test_discover_and_promote_with_fake_agents(self):
         with tempfile.TemporaryDirectory() as d:
@@ -383,7 +383,10 @@ class MomentsPipelineTests(unittest.TestCase):
             self.assertIn("reading papers", discover_prompt)
             self.assertIn("(no drafts yet)", discover_prompt)
             self.assertIn('"tasks"', discover_prompt)
+            self.assertIn("Do not treat a visible button", discover_prompt)
+            self.assertIn("require explicit confirmation", discover_prompt)
             self.assertIn("Draft Candidates From Discovery", discover_structured.instructions[0])
+            self.assertIn("completed irreversible actions", discover_structured.instructions[0])
             candidate_files = _candidate_files(root)
             self.assertEqual(len(candidate_files), 1)
             self.assertTrue((_discovery_state(root) / ".last_discovery").exists())
