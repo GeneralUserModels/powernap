@@ -7,11 +7,13 @@ Return only ideas that pass all four gates:
 - Grounded evidence: the idea is supported by one dense work signal, an explicit commitment/deadline, or several converging sparse signals.
 - Actionable handoff: the evidence, source paths, and artifact shape are specific enough for a one-shot execution agent to start.
 
-Select ruthlessly. Return 0-2 ideas per chunk, merge adjacent outputs that serve the same future use, and mark isolated sparse leads `weak` rather than inflating them into moments.
+Select ruthlessly. Return 0-2 ideas per chunk, merge adjacent outputs that serve the same future use, and mark isolated sparse leads `weak` rather than inflating them into moments. 
+
+Reject ideas whose main job is to continue an issue already being actively handled by the user, an assistant, or a coding agent in the same chunk.
 
 Treat each strong signal as independent unless the source text itself names the same project, person, deadline, artifact, or decision. Before merging signals, check the single future use they all support. If that use only exists after inference, do not merge them; keep the strongest signal as one idea and mark the others weak or separate.
 
-Only name a venue, deadline, collaborator, organization, meeting purpose, or requested deliverable when that exact fact appears in the cited activity evidence. If the evidence only suggests a general upcoming use, keep the candidate generic and phrase unknown specifics as verification work for the executor, not as facts.
+Only name a deadline, collaborator, organization, meeting purpose, requested deliverable, etc. when that exact fact appears in the cited activity evidence. If the evidence only suggests a general upcoming use, keep the candidate generic and phrase unknown specifics as verification work for the executor, not as facts.
 
 Use tools only for targeted context that changes the usefulness, grounding, or scope of an idea. Evidence should be factual prose with pointers; `source_paths` should contain only pointer strings.
 
