@@ -291,8 +291,7 @@ prompt per discovery phase.
 2. Run discovery and promotion end to end.
 3. Inspect the candidate JSON, not just the summary.
 4. Edit the smallest relevant prompt:
-   - `prompts/discover.txt` for ideation behavior, source use, quality bar, and examples.
-   - `prompts/discover_compile.txt` for candidate field discipline.
+   - `prompts/discover.txt` for discovery behavior, source use, quality bar, examples, and candidate field discipline.
    - `prompts/reconcile.txt` for duplicate/update routing after chunk discovery.
    - `prompts/promote.txt` for ranking.
 5. Rerun the exact same temp slice and compare candidate slugs, evidence,
@@ -368,7 +367,7 @@ BASE_SLICE=/tmp/powernap-moments-smoke
 
 # For each variant, create:
 # $ROUND_ROOT/variants/<name>/overrides.json
-# with keys like DISCOVER_TEMPLATE, DISCOVER_COMPILE_TEMPLATE, or RECONCILE_TEMPLATE.
+# with keys like DISCOVER_TEMPLATE or RECONCILE_TEMPLATE.
 
 VARIANT_NAME=shared_use ROUND_ROOT="$ROUND_ROOT" BASE_SLICE="$BASE_SLICE" \
 .venv/bin/python - <<'PY'

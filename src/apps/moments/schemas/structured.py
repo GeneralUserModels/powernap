@@ -24,7 +24,7 @@ class CandidatePayload(StrictModel):
     usefulness: int
     specific_instructions: str
     desired_artifact: str
-    evidence: list[str]
+    evidence: list[str] = []
     likely_next_need: str
     why_now: str
     user_value: str
@@ -38,37 +38,13 @@ class CandidatePayload(StrictModel):
         return self
 
 
-class MomentIdea(StrictModel):
-    likely_next_need: str
-    title: str
-    topic_hint: str
-    artifact: str
-    why_useful: str
-    evidence: list[str]
-    cadence_hint: Literal["once", "scheduled", "trigger"]
-    relation_to_existing: Literal["new", "possible_update", "duplicate", "weak"]
-
-
-class IdeaPayload(StrictModel):
-    ideas: list[MomentIdea] = []
-    notes: str = ""
-
-
 class DraftRejectOp(StrictModel):
     id: str
     reason: str
 
 
-class DraftRemoveOp(StrictModel):
-    id: str
-    reason: str
-
-
-class DraftActionPayload(StrictModel):
-    upserts: list[CandidatePayload] = []
-    rejected: list[DraftRejectOp] = []
-    remove: list[DraftRemoveOp] = []
-    notes: str = ""
+class DiscoveryPayload(StrictModel):
+    tasks: list[CandidatePayload] = []
 
 
 class ReconcileUpdate(StrictModel):

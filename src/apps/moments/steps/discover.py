@@ -39,11 +39,10 @@ from apps.moments.core.candidates import (
 )
 from apps.moments.core.incremental import DEFAULT_MISSING_CHECKPOINT_AGE, read_checkpoint, write_checkpoint
 from apps.moments.core.paths import summarize_tada_tasks
-from apps.moments.schemas.structured import DraftActionPayload, IdeaPayload, ReconcilePayload
+from apps.moments.schemas.structured import DiscoveryPayload, ReconcilePayload
 
 _PROMPTS = Path(__file__).resolve().parent.parent / "prompts"
 DISCOVER_TEMPLATE = (_PROMPTS / "discover.txt").read_text()
-DISCOVER_COMPILE_TEMPLATE = (_PROMPTS / "discover_compile.txt").read_text()
 RECONCILE_TEMPLATE = (_PROMPTS / "reconcile.txt").read_text()
 
 FILTERED_STREAM_SOURCES = [
@@ -91,11 +90,7 @@ RenderedRow = RenderedActivityRow
 @dataclass(frozen=True)
 class ChunkDiscoveryResult:
     chunk_index: int
-    upserts: list[MomentCandidate]
-    rejected: list[dict[str, str]]
-    removed: list[dict[str, str]]
-    idea_notes: str
-    compiler_notes: str
+    tasks: list[MomentCandidate]
 
 
 def _merged_filtered_rows(logs_path: Path, since: datetime | None):
@@ -269,43 +264,24 @@ def _validate_rejected(value: Any) -> list[dict[str, str]]:
     return result
 
 
-def _parse_structured_ideas(payload: IdeaPayload) -> tuple[list[dict[str, Any]], str]:
-    data = payload.model_dump(exclude_none=True)
-    ideas = data.get("ideas", [])
-    if not isinstance(ideas, list):
-        raise CandidateError("idea JSON ideas must be a list")
-    notes = data.get("notes", "")
-    if notes is None:
-        notes = ""
-    if not isinstance(notes, str):
-        raise CandidateError("idea JSON notes must be a string")
-    return ideas, notes.strip()
-
-
-def _parse_draft_action_payload(payload: dict[str, Any]) -> tuple[list[MomentCandidate], list[dict[str, str]], list[dict[str, str]], str]:
-    raw_candidates = payload.get("upserts", [])
+def _parse_discovery_payload(payload: dict[str, Any]) -> list[MomentCandidate]:
+    raw_candidates = payload.get("tasks", [])
     if raw_candidates is None:
         raw_candidates = []
     if not isinstance(raw_candidates, list):
-        raise CandidateError("draft action JSON upserts must be a list")
-    upserts = [validate_candidate(raw) for raw in raw_candidates]
+        raise CandidateError("discovery JSON tasks must be a list")
+    tasks = [validate_candidate(raw) for raw in raw_candidates]
     seen: set[str] = set()
-    for candidate in upserts:
+    for candidate in tasks:
         if candidate.id in seen or candidate.slug in seen:
-            raise CandidateError(f"duplicate draft action candidate id or slug: {candidate.id}")
+            raise CandidateError(f"duplicate discovery task id or slug: {candidate.id}")
         seen.add(candidate.id)
         seen.add(candidate.slug)
-
-    notes = payload.get("notes", "")
-    if notes is None:
-        notes = ""
-    if not isinstance(notes, str):
-        raise CandidateError("draft action JSON notes must be a string")
-    return upserts, _validate_rejected(payload.get("rejected", [])), _validate_rejected(payload.get("remove", [])), notes.strip()
+    return tasks
 
 
-def _parse_structured_draft_actions(payload: DraftActionPayload) -> tuple[list[MomentCandidate], list[dict[str, str]], list[dict[str, str]], str]:
-    return _parse_draft_action_payload(payload.model_dump(exclude_none=True))
+def _parse_structured_discovery(payload: DiscoveryPayload) -> list[MomentCandidate]:
+    return _parse_discovery_payload(payload.model_dump(exclude_none=True))
 
 
 def _parse_reconcile_payload(payload: dict[str, Any]) -> tuple[list[MomentCandidate], list[dict[str, str]], list[dict[str, str]], str]:
@@ -354,7 +330,14 @@ def _parse_structured_reconcile(payload: ReconcilePayload) -> tuple[list[MomentC
     return _parse_reconcile_payload(payload.model_dump(exclude_none=True))
 
 
-def _run_tool_agent_for_ideation(
+@retry(
+    stop=stop_after_attempt(STRUCTURED_OUTPUT_ATTEMPTS),
+    wait=wait_none(),
+    retry=retry_if_exception_type(CandidateError),
+    before_sleep=before_sleep_log(logger, logging.WARNING),
+    reraise=True,
+)
+def _run_tool_agent_for_tasks(
     *,
     instruction: str,
     logs_dir: str,
@@ -363,7 +346,7 @@ def _run_tool_agent_for_ideation(
     api_key: str | None,
     subagent_model: str | None,
     subagent_api_key: str | None,
-) -> str:
+) -> list[MomentCandidate]:
     with _BUILD_AGENT_LOCK:
         agent, _ = build_agent(
             model,
@@ -375,29 +358,25 @@ def _run_tool_agent_for_ideation(
     agent.max_rounds = AGENT_IDEATION_MAX_ROUNDS
     result = agent.run(
         [{"role": "user", "content": instruction}],
-        final_response_model=IdeaPayload,
+        final_response_model=DiscoveryPayload,
         final_instruction=(
-            "Convert your discovery work into the required structured idea payload. "
-            "Return only ideas that are explicitly supported by the activity context or tool results. "
-            "If there are no grounded ideas, return an empty ideas list and explain why in notes."
+            "Convert your discovery work into the required structured discovery payload. "
+            "Return only tasks that are explicitly supported by the activity context or tool results. "
+            "If there are no grounded tasks, return an empty tasks list."
         ),
-        final_metadata_app="moments_ideation",
+        final_metadata_app="moments_discovery",
     ).strip()
     if not result or result == "(max rounds reached)":
-        raise CandidateError("discovery ideation agent did not produce usable notes")
-    return result
-
-
-def _parse_agent_ideas(result: str) -> tuple[list[dict[str, Any]], str]:
+        raise CandidateError("discovery agent did not produce usable tasks")
     try:
         try:
             payload = extract_json_object(result)
-            parsed = IdeaPayload.model_validate(payload)
+            parsed = DiscoveryPayload.model_validate(payload)
         except StructuredOpsError:
-            parsed = IdeaPayload.model_validate_json(result)
+            parsed = DiscoveryPayload.model_validate_json(result)
     except (StructuredOpsError, ValidationError) as exc:
-        raise CandidateError(f"discovery ideation agent returned invalid idea JSON: {exc}") from exc
-    return _parse_structured_ideas(parsed)
+        raise CandidateError(f"discovery agent returned invalid task JSON: {exc}") from exc
+    return _parse_structured_discovery(parsed)
 
 
 @retry(
@@ -455,25 +434,6 @@ def _build_instruction(
         chunk_metadata=chunk.metadata,
         activity_chunk=chunk.rendered_text,
         draft_context=draft_context,
-    )
-
-
-def _build_draft_action_instruction(
-    *,
-    now: str,
-    logs_dir: str,
-    tada_dir: Path,
-    accepted_moments: str,
-    feedback_state_summary: str,
-    ideas: list[dict[str, Any]],
-) -> str:
-    return DISCOVER_COMPILE_TEMPLATE.format(
-        now=now,
-        logs_dir=logs_dir,
-        tada_dir=str(tada_dir),
-        accepted_moments=accepted_moments,
-        feedback_state_summary=feedback_state_summary,
-        idea_json=json.dumps(ideas, indent=2, sort_keys=True),
     )
 
 
@@ -559,7 +519,7 @@ def _process_discovery_chunk(
         chunk=chunk,
         draft_context=_draft_context_for_text({}, chunk.rendered_text),
     )
-    agent_result = _run_tool_agent_for_ideation(
+    tasks = _run_tool_agent_for_tasks(
         instruction=instruction,
         logs_dir=logs_dir,
         tada_dir=tada_dir,
@@ -568,30 +528,9 @@ def _process_discovery_chunk(
         subagent_model=subagent_model,
         subagent_api_key=subagent_api_key,
     )
-    ideas, idea_notes = _parse_agent_ideas(agent_result)
-    compiler_instruction = _build_draft_action_instruction(
-        now=now,
-        logs_dir=logs_dir,
-        tada_dir=tada_dir,
-        accepted_moments=accepted_moments,
-        feedback_state_summary=feedback_state_summary,
-        ideas=ideas,
-    )
-    _result, (upserts, chunk_rejected, removed_drafts, compiler_notes) = _run_agent_for_valid_json(
-        instruction=compiler_instruction,
-        model=model,
-        api_key=api_key,
-        response_model=DraftActionPayload,
-        metadata_app="moments_draft_compile",
-        parser=_parse_structured_draft_actions,
-    )
     return ChunkDiscoveryResult(
         chunk_index=chunk.index,
-        upserts=upserts,
-        rejected=chunk_rejected,
-        removed=removed_drafts,
-        idea_notes=idea_notes,
-        compiler_notes=compiler_notes,
+        tasks=tasks,
     )
 
 
@@ -706,18 +645,7 @@ def run(
         subagent_api_key=subagent_api_key,
     )
     for chunk_result in chunk_results:
-        draft_candidates.extend(chunk_result.upserts)
-        rejected.extend(chunk_result.rejected)
-        rejected.extend(chunk_result.removed)
-        chunk_note_parts = []
-        if chunk_result.idea_notes:
-            chunk_note_parts.append(f"ideas: {chunk_result.idea_notes}")
-        if chunk_result.compiler_notes:
-            chunk_note_parts.append(f"compiled: {chunk_result.compiler_notes}")
-        if chunk_result.removed:
-            chunk_note_parts.append(f"ignored {len(chunk_result.removed)} remove ops from parallel chunk compile")
-        if chunk_note_parts:
-            notes.append(f"chunk {chunk_result.chunk_index}: " + " | ".join(chunk_note_parts))
+        draft_candidates.extend(chunk_result.tasks)
 
     if chunks_processed == 0:
         mode = "no_new_data"
@@ -745,7 +673,7 @@ def run(
         f"Mode: {mode}",
         f"Activity window starts after: {activity_since.strftime('%Y-%m-%d %H:%M')}",
         f"Processed {chunks_processed} discovery chunks.",
-        f"Reconciled {len(draft_candidates)} drafts to {len(candidates)} candidates.",
+        f"Reconciled {len(draft_candidates)} discovered tasks to {len(candidates)} candidates.",
         f"Wrote {len(candidates)} candidates to {candidate_path}",
     ]
     if rejected:
