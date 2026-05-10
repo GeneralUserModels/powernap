@@ -43,6 +43,58 @@ hardcode.
   contains grant details. A good trigger-style moment might gather a relevant
   prior SOW and adapt it to the current grant context.
 
+## How To Choose Good Slices
+
+Prefer roughly one day of real activity. A full-day slice is usually better than
+a tiny handpicked cluster because it preserves the normal mix of screen activity,
+notifications, files, email, calendar events, stale leads, and already-completed
+work that discovery must handle in production.
+
+Good smoke slices usually have:
+
+- At least three connector types, usually `screen`, one sparse source
+  (`email`, `calendar`, or `notifications`), and one artifact/source-context
+  stream such as `filesys`.
+- Both positive and negative examples. Include at least one signal that should
+  become a useful moment or update, and at least one tempting signal that should
+  be rejected, marked weak, or routed as a duplicate.
+- Natural noise from the same day. Do not remove nearby unrelated activity just
+  because it makes the test harder; unrelated strong signals are how you catch
+  bad narrative chaining.
+- Prior-art visibility. Copy accepted Tada definitions and relevant completed
+  one-offs into the temp tree when the failure mode involves duplicates or
+  already-done work.
+- A clear expected judgment before running the test: for example, "should produce
+  one meeting-prep update and no Cursor-output roadmap" or "should return zero
+  candidates from travel receipts unless a new reimbursement request appears."
+
+Good adversarial day slices mix weak and strong signals. Examples of useful
+mixtures:
+
+- A completed coding-agent notification, nearby screen debugging, and a real
+  project signal. This tests whether discovery proposes active work already being
+  handled.
+- PDF/download/file events, paper or citation emails, and a visible writing or
+  review context. This tests whether downloads alone get inflated into broad
+  literature summaries.
+- Travel receipts or calendar events, reimbursement emails, and unrelated work
+  activity. This tests whether logistics artifacts duplicate existing one-offs or
+  get chained into unrelated professional prep.
+- A meeting/advising notification, recent browsing about the person or topic,
+  and unrelated high-volume screen work. This tests whether the meeting moment
+  stays bounded and grounded.
+- Existing accepted moments visible in Tada plus fresh adjacent activity. This
+  tests whether discovery routes updates instead of minting duplicate moments.
+
+Avoid slices that are too clean:
+
+- Do not test only one connector type unless you are isolating a deterministic
+  source-ingestion bug.
+- Do not include only rows that mention the target topic. Include adjacent rows
+  from the same day so source ranking, merging, and rejection behavior are tested.
+- Do not judge from the generated summary alone. Inspect candidate JSON, evidence,
+  source paths, and promotion ordering.
+
 ## Build A Temp Log Slice
 
 This example creates `/tmp/powernap-moments-smoke/logs` from selected rows. Adjust
