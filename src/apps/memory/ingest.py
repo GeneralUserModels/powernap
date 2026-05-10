@@ -10,7 +10,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from threading import Lock
+from typing import Any, Callable
 
 from dotenv import load_dotenv
 
@@ -19,8 +20,8 @@ load_dotenv()
 from agent.builder import build_agent
 from apps.common.activity_streams import DEFAULT_FILTERED_STREAM_SOURCES
 from apps.common.structured_ops import StructuredOpsError, extract_json_object, require_list, require_string, safe_rel_path
-from apps.memory.schemas.structured import ExistingPageUpdatePayload, FinalizePageOpsPayload, NewPageCreatePayload
-from apps.moments.core.incremental import read_checkpoint, write_checkpoint
+from apps.memory.schemas.structured import ExistingPageUpdatePayload, FinalizePageOpsPayload, InventoryPayload, NewPageCreatePayload
+from apps.moments.core.incremental import DEFAULT_MISSING_CHECKPOINT_AGE, read_checkpoint, write_checkpoint
 
 
 _PROMPTS = Path(__file__).parent / "prompts"
@@ -39,16 +40,7 @@ SCHEMA_TEMPLATE = (_PROMPTS / "schema.md").read_text()
 FILTERED_STREAM_SOURCES = DEFAULT_FILTERED_STREAM_SOURCES
 
 SPECIAL_MEMORY_FILES = {"index.md", "log.md", "schema.md"}
-INVENTORY_KEYS = {
-    "mode",
-    "sources_to_read",
-    "existing_pages_to_read",
-    "likely_pages_to_create",
-    "likely_pages_to_update",
-    "backfill_sources_to_sample",
-    "rationale",
-}
-_JSON_BLOCK_RE = re.compile(r"```json\s*(\{.*?\})\s*```", re.DOTALL)
+ARCHIVE_MEMORY_DIR = "_archive"
 _WIKI_LINK_RE = re.compile(r"\[\[([^\]\n]+)\]\]")
 PREVIEW_MAX_FILES = 20
 PREVIEW_MAX_LINES = 8
@@ -84,6 +76,51 @@ class PageAgentTask:
     default_create_path: str | None = None
 
 
+class MemoryIngestProgress:
+    """Map nested memory-agent rounds into one monotonic 0-100 progress signal."""
+
+    def __init__(self, on_round: Callable[[int, int], None] | None):
+        self._on_round = on_round
+        self._lock = Lock()
+        self._last_pct = -1
+
+    def emit(self, pct: float) -> None:
+        if self._on_round is None:
+            return
+        next_pct = min(100, max(0, round(pct)))
+        with self._lock:
+            if next_pct <= self._last_pct:
+                return
+            self._last_pct = next_pct
+            self._on_round(next_pct, 100)
+
+    def phase_callback(self, start_pct: float, span_pct: float) -> Callable[[int, int], None]:
+        def _callback(num_turns: int, max_turns: int) -> None:
+            denom = max(1, max_turns)
+            fraction = min(1.0, max(0.0, num_turns / denom))
+            self.emit(start_pct + span_pct * fraction)
+
+        return _callback
+
+    def page_callbacks(self, count: int, start_pct: float, span_pct: float) -> list[Callable[[int, int], None]]:
+        if count <= 0:
+            return []
+        task_progress = [0.0] * count
+
+        def _make_callback(idx: int) -> Callable[[int, int], None]:
+            def _callback(num_turns: int, max_turns: int) -> None:
+                denom = max(1, max_turns)
+                fraction = min(1.0, max(0.0, num_turns / denom))
+                with self._lock:
+                    task_progress[idx] = max(task_progress[idx], fraction)
+                    aggregate = sum(task_progress) / count
+                self.emit(start_pct + span_pct * aggregate)
+
+            return _callback
+
+        return [_make_callback(idx) for idx in range(count)]
+
+
 def _modified_sources(logs_dir: str, since: datetime | None) -> list[str]:
     """Return non-session source files modified after *since*."""
     if since is None:
@@ -107,7 +144,11 @@ def _new_files_in(base: Path, pattern: str, since: datetime | None) -> list[Path
 
 
 def _is_hidden_or_special(rel: Path) -> bool:
-    return str(rel) in SPECIAL_MEMORY_FILES or any(part.startswith(".") for part in rel.parts)
+    return (
+        str(rel) in SPECIAL_MEMORY_FILES
+        or (bool(rel.parts) and rel.parts[0] == ARCHIVE_MEMORY_DIR)
+        or any(part.startswith(".") for part in rel.parts)
+    )
 
 
 def _memory_pages(memory_dir: Path) -> list[Path]:
@@ -127,7 +168,7 @@ def _all_memory_markdown(memory_dir: Path) -> list[Path]:
         return []
     return sorted(
         p for p in memory_dir.rglob("*.md")
-        if not any(part.startswith(".") for part in p.relative_to(memory_dir).parts)
+        if not _is_hidden_or_special(p.relative_to(memory_dir))
     )
 
 
@@ -232,18 +273,45 @@ def _page_metadata_list(memory_dir: Path, rel_paths: list[str] | None = None) ->
     for page in sorted(set(pages)):
         rel = page.relative_to(memory_dir)
         title = _page_title(page)
+        category = _page_category(page, memory_dir)
         excerpt = _page_excerpt(page)
+        category_suffix = f" — category: {category}" if category else ""
         suffix = f" — {excerpt}" if excerpt else ""
-        lines.append(f"- `{rel}` — title: {title}{suffix}")
+        lines.append(f"- `{rel}` — title: {title}{category_suffix}{suffix}")
     return "\n".join(lines)
 
 
-def _page_title(path: Path) -> str:
+def _page_frontmatter(path: Path) -> dict[str, str]:
     text = path.read_text()
-    match = re.search(r"^title:\s*(.+?)\s*$", text, re.MULTILINE)
-    if match:
-        return match.group(1).strip().strip('"')
+    if not text.startswith("---\n"):
+        return {}
+    marker = "\n---\n"
+    end = text.find(marker, 4)
+    if end == -1:
+        return {}
+    frontmatter: dict[str, str] = {}
+    for line in text[4:end].splitlines():
+        key, sep, value = line.partition(":")
+        if sep:
+            frontmatter[key.strip()] = value.strip().strip("\"'")
+    return frontmatter
+
+
+def _page_title(path: Path) -> str:
+    title = _page_frontmatter(path).get("title")
+    if title:
+        return title
     return path.stem.replace("-", " ").title()
+
+
+def _page_category(path: Path, memory_dir: Path) -> str | None:
+    category = _page_frontmatter(path).get("category")
+    if category:
+        return category
+    rel = path.relative_to(memory_dir)
+    if str(rel.parent) != ".":
+        return str(rel.parent)
+    return None
 
 
 def _clean_page_ref(ref: Any) -> str:
@@ -466,21 +534,9 @@ def _format_json(data: Any) -> str:
 
 
 def _parse_inventory(result: str, expected_mode: str) -> dict[str, Any]:
-    matches = _JSON_BLOCK_RE.findall(result)
-    if not matches:
-        raise ValueError("Inventory pass did not return a fenced JSON block")
-    payload = json.loads(matches[-1])
-    missing = INVENTORY_KEYS - set(payload)
-    if missing:
-        raise ValueError(f"Inventory JSON missing keys: {', '.join(sorted(missing))}")
+    payload = InventoryPayload.model_validate_json(result).model_dump()
     if payload.get("mode") != expected_mode:
         raise ValueError(f"Inventory mode {payload.get('mode')!r} did not match expected mode {expected_mode!r}")
-    list_keys = INVENTORY_KEYS - {"mode", "rationale"}
-    for key in list_keys:
-        if not isinstance(payload.get(key), list):
-            raise ValueError(f"Inventory JSON key {key!r} must be a list")
-    if not isinstance(payload.get("rationale"), str):
-        raise ValueError("Inventory JSON key 'rationale' must be a string")
     return payload
 
 
@@ -498,6 +554,21 @@ def _validate_markdown_for_write(path: Path, memory_dir: Path, markdown: str, al
         raise ValueError(f"Memory op cannot modify special file in this pass: {rel}")
     if not is_special and not _has_frontmatter_text(markdown):
         raise ValueError(f"Memory content page must include YAML frontmatter: {rel}")
+
+
+def _validate_page_for_delete(path: Path, memory_dir: Path) -> None:
+    memory_dir = memory_dir.resolve()
+    path = path.resolve()
+    try:
+        rel = path.relative_to(memory_dir)
+    except ValueError as exc:
+        raise ValueError(f"Memory delete path escapes memory dir: {path}") from exc
+    if _is_hidden_or_special(rel):
+        raise ValueError(f"Memory delete path must be a normal content page: {rel}")
+    if not path.exists():
+        raise ValueError(f"delete_pages target does not exist: {rel}")
+    if not path.is_file():
+        raise ValueError(f"delete_pages target is not a file: {rel}")
 
 
 def _has_frontmatter_text(text: str) -> bool:
@@ -525,8 +596,8 @@ def _parse_page_ops(
                 payload = payload_model.model_validate(extract_json_object(result)).model_dump()
     except (StructuredOpsError, ValueError) as exc:
         raise ValueError(str(exc)) from exc
-    ops: dict[str, list[dict[str, str]]] = {"create_pages": [], "update_pages": []}
-    for op_name in ops:
+    ops: dict[str, list[dict[str, str]]] = {"create_pages": [], "update_pages": [], "delete_pages": []}
+    for op_name in ("create_pages", "update_pages"):
         for item in require_list(payload, op_name):
             if not isinstance(item, dict):
                 raise ValueError(f"{op_name} entries must be objects")
@@ -546,6 +617,22 @@ def _parse_page_ops(
                 raise ValueError(f"update_pages target does not exist: {rel}")
             _validate_markdown_for_write(path, memory_dir, markdown, allow_special=allow_special)
             ops[op_name].append({"path": str(path.relative_to(memory_dir)), "markdown": markdown})
+    for item in require_list(payload, "delete_pages"):
+        if not isinstance(item, dict):
+            raise ValueError("delete_pages entries must be objects")
+        rel = require_string(item, "path")
+        path = safe_rel_path(memory_dir, rel, suffix=".md")
+        _validate_page_for_delete(path, memory_dir)
+        ops["delete_pages"].append({"path": str(path.relative_to(memory_dir))})
+    written_paths = {
+        item["path"]
+        for op_name in ("create_pages", "update_pages")
+        for item in ops.get(op_name, [])
+    }
+    deleted_paths = {item["path"] for item in ops.get("delete_pages", [])}
+    conflicts = sorted(written_paths & deleted_paths)
+    if conflicts:
+        raise ValueError(f"Memory op cannot write and delete the same page: {', '.join(conflicts)}")
     notes = payload.get("notes", "")
     if notes is None:
         notes = ""
@@ -569,6 +656,16 @@ def _apply_page_ops(memory_dir: Path, ops: dict[str, list[dict[str, str]]]) -> l
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(item["markdown"])
         changed.append(str(path.relative_to(memory_dir)))
+    for item in ops.get("delete_pages", []):
+        path = safe_rel_path(memory_dir, item["path"], suffix=".md")
+        _validate_page_for_delete(path, memory_dir)
+        rel = str(path.relative_to(memory_dir))
+        path.unlink()
+        changed.append(rel)
+        parent = path.parent
+        while parent != memory_dir and not any(parent.iterdir()):
+            parent.rmdir()
+            parent = parent.parent
     return sorted(set(changed))
 
 
@@ -724,6 +821,7 @@ def _run_page_agent_tasks(
     on_round,
     subagent_model: str | None,
     subagent_api_key: str | None,
+    page_on_rounds: list[Callable[[int, int], None]] | None = None,
 ) -> tuple[list[str], dict[str, list[dict[str, str]]], str]:
     if not tasks:
         return [], {"create_pages": [], "update_pages": []}, ""
@@ -739,7 +837,7 @@ def _run_page_agent_tasks(
                 logs_dir=logs_dir,
                 model=model,
                 api_key=api_key,
-                on_round=on_round,
+                on_round=page_on_rounds[idx] if page_on_rounds else on_round,
                 subagent_model=subagent_model,
                 subagent_api_key=subagent_api_key,
                 final_response_model=task.payload_model,
@@ -751,6 +849,8 @@ def _run_page_agent_tasks(
         for future in as_completed(futures):
             idx, task = futures[future]
             results.append((idx, task, future.result()))
+            if page_on_rounds:
+                page_on_rounds[idx](1, 1)
 
     combined_ops: dict[str, list[dict[str, str]]] = {"create_pages": [], "update_pages": []}
     notes: list[str] = []
@@ -795,8 +895,11 @@ def run(
     _bootstrap_memory(memory_dir)
 
     checkpoint_path = memory_dir / ".last_ingest"
-    last_ingest = read_checkpoint(checkpoint_path)
+    last_ingest = read_checkpoint(checkpoint_path, default_age=DEFAULT_MISSING_CHECKPOINT_AGE)
     inputs = _collect_ingest_inputs(logs_path, last_ingest)
+
+    progress = MemoryIngestProgress(on_round)
+    progress.emit(0)
 
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
     inventory_result = _run_agent_pass(
@@ -805,10 +908,17 @@ def run(
         logs_dir,
         model,
         api_key,
-        on_round,
+        progress.phase_callback(0, 20),
         subagent_model,
         subagent_api_key,
+        final_response_model=InventoryPayload,
+        final_instruction=(
+            "Convert the inventory work into the required structured inventory payload. "
+            "Use only paths and page titles grounded in the conversation and tool results."
+        ),
+        final_metadata_app="memory_inventory",
     )
+    progress.emit(20)
     inventory = _parse_inventory(inventory_result, inputs.mode)
 
     before_mtimes = {str(p.relative_to(memory_dir)): p.stat().st_mtime for p in _all_memory_markdown(memory_dir)}
@@ -858,10 +968,12 @@ def run(
         memory_dir,
         model,
         api_key,
-        on_round,
+        None,
         subagent_model,
         subagent_api_key,
+        page_on_rounds=progress.page_callbacks(len(page_tasks), 20, 60),
     )
+    progress.emit(80)
     content_result = "\n\n".join(content_result_parts) or "(no content page agents were needed)"
     content_changed = _apply_page_ops(memory_dir, content_ops)
 
@@ -879,7 +991,7 @@ def run(
         logs_dir,
         model,
         api_key,
-        on_round,
+        progress.phase_callback(80, 20),
         subagent_model,
         subagent_api_key,
         final_response_model=FinalizePageOpsPayload,
@@ -903,6 +1015,7 @@ def run(
         raise RuntimeError(f"Memory ingest validation failed: {_format_json(final_issues)}")
 
     write_checkpoint(checkpoint_path)
+    progress.emit(100)
     content_notes_text = f"\nNotes: {content_notes}" if content_notes else ""
     finalize_notes_text = f"\nNotes: {finalize_notes}" if finalize_notes else ""
 

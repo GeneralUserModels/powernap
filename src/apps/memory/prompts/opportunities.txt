@@ -24,11 +24,11 @@ Mode: `{mode}`
 
 ## Task
 
-Find page opportunities that are not already represented by the existing wiki metadata.
+Find page opportunities that are not already represented by the existing wiki metadata, including category gaps.
 
 Read the planned sources from inventory, sample backfill sources when useful, and use bounded shell analysis when it helps identify repeated people, projects, tools, relationships, workflows, etc. 
 
-Return candidate pages with grounded evidence and a novelty reason.
+Return candidate pages with grounded evidence and a novelty reason. Prefer candidates that improve category coverage when they are supported by evidence.
 
 End with a single fenced JSON block. It must be the last thing in your final message.
 

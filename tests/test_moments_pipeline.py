@@ -5,7 +5,7 @@ import sys
 import tempfile
 import unittest
 import asyncio
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -169,11 +169,13 @@ def _candidate_files(root: Path) -> list[Path]:
 
 
 class MomentsPipelineTests(unittest.TestCase):
-    def test_scheduled_services_wait_on_first_launch_but_catch_up_after_schedule(self):
+    def test_scheduled_services_seed_missing_pipeline_checkpoint_to_24_hour_catchup(self):
         with tempfile.TemporaryDirectory() as d:
-            last_run = Path(d) / ".discovery_last_run"
-            self.assertFalse(scheduled_service_due("daily at 2am", last_run))
+            last_run = Path(d) / ".last_discovery"
+            self.assertTrue(scheduled_service_due("daily at 2am", last_run))
             self.assertTrue(last_run.exists())
+            seeded = datetime.fromisoformat(last_run.read_text().strip())
+            self.assertTrue(datetime.now() - timedelta(hours=25) <= seeded <= datetime.now() - timedelta(hours=23))
             last_run.write_text(datetime(2000, 1, 1).isoformat())
             self.assertTrue(scheduled_service_due("daily at 2am", last_run))
 
@@ -390,8 +392,9 @@ class MomentsPipelineTests(unittest.TestCase):
             logs.mkdir()
             screen = logs / "screen"
             screen.mkdir()
+            recent = datetime.now() - timedelta(hours=23)
             (screen / "filtered.jsonl").write_text(
-                _filtered_row(datetime(2025, 1, 1, 0, 0), "screen", "reading papers") + "\n"
+                _filtered_row(recent, "screen", "reading papers") + "\n"
             )
             draft_state_json = "```json\n" + json.dumps({"upserts": [_candidate()], "rejected": [], "remove": [], "notes": ""}) + "\n```"
             reconcile_json = "```json\n" + json.dumps({"candidates": [_candidate()], "updates": [], "rejected": [], "notes": ""}) + "\n```"
@@ -422,29 +425,33 @@ class MomentsPipelineTests(unittest.TestCase):
             self.assertIn("likely_next_need", promote_structured.instructions[0])
             self.assertIn("advances that future need", promote_structured.instructions[0])
 
-    def test_invalid_discovery_does_not_write_checkpoint(self):
+    def test_invalid_discovery_keeps_seed_checkpoint(self):
         with tempfile.TemporaryDirectory() as d:
             logs = Path(d) / "logs"
             screen = logs / "screen"
             screen.mkdir(parents=True)
+            recent = datetime.now() - timedelta(hours=23)
             (screen / "filtered.jsonl").write_text(
-                _filtered_row(datetime(2025, 1, 1, 0, 0), "screen", "reading papers") + "\n"
+                _filtered_row(recent, "screen", "reading papers") + "\n"
             )
             structured = _FakeStructuredCompletion("not json")
             with patch.object(discover, "build_agent", return_value=(_FakeToolAgent("not json"), None)), \
                  patch.object(discover, "structured_completion", side_effect=structured):
                 with self.assertRaises(CandidateError):
                     discover.run(str(logs), model="fake")
-            self.assertFalse((_discovery_state(Path(d)) / ".last_discovery").exists())
+            seeded = datetime.fromisoformat((_discovery_state(Path(d)) / ".last_discovery").read_text().strip())
+            self.assertTrue(datetime.now() - timedelta(hours=25) <= seeded <= datetime.now() - timedelta(hours=23))
 
-    def test_first_discovery_uses_recent_activity_window(self):
+    def test_first_discovery_defaults_to_24_hour_activity_window(self):
         with tempfile.TemporaryDirectory() as d:
             logs = Path(d) / "logs"
             screen = logs / "screen"
             screen.mkdir(parents=True)
+            ancient = datetime.now() - timedelta(hours=25)
+            recent = datetime.now() - timedelta(hours=23)
             (screen / "filtered.jsonl").write_text(
-                _filtered_row(datetime(2025, 1, 1, 10, 0), "screen", "ancient topic") + "\n"
-                + _filtered_row(datetime(2025, 1, 3, 10, 0), "screen", "recent topic") + "\n"
+                _filtered_row(ancient, "screen", "ancient topic") + "\n"
+                + _filtered_row(recent, "screen", "recent topic") + "\n"
             )
             structured = _FakeStructuredCompletion(
                 "```json\n" + json.dumps({"upserts": [_candidate()], "rejected": [], "remove": [], "notes": ""}) + "\n```",
@@ -457,18 +464,19 @@ class MomentsPipelineTests(unittest.TestCase):
                 result = discover.run(str(logs), model="fake")
 
             discover_prompt = fake_agent.messages[0][0]["content"]
-            self.assertIn("Activity window starts after: **2025-01-02 10:00**", discover_prompt)
+            self.assertIn("Activity window starts after:", discover_prompt)
             self.assertIn("recent topic", discover_prompt)
             self.assertNotIn("ancient topic", discover_prompt)
-            self.assertIn("Activity window starts after: 2025-01-02 10:00", result)
+            self.assertIn("Activity window starts after:", result)
 
     def test_discovery_retries_malformed_json_once(self):
         with tempfile.TemporaryDirectory() as d:
             logs = Path(d) / "logs"
             screen = logs / "screen"
             screen.mkdir(parents=True)
+            recent = datetime.now() - timedelta(hours=23)
             (screen / "filtered.jsonl").write_text(
-                _filtered_row(datetime(2025, 1, 1, 0, 0), "screen", "reading papers") + "\n"
+                _filtered_row(recent, "screen", "reading papers") + "\n"
             )
             structured = _FakeStructuredCompletion(
                 StructuredOpsError("structured output validation failed"),
@@ -489,8 +497,9 @@ class MomentsPipelineTests(unittest.TestCase):
             logs = Path(d) / "logs"
             screen = logs / "screen"
             screen.mkdir(parents=True)
+            recent = datetime.now() - timedelta(hours=23)
             (screen / "filtered.jsonl").write_text(
-                _filtered_row(datetime(2025, 1, 1, 0, 0), "screen", "reading papers") + "\n"
+                _filtered_row(recent, "screen", "reading papers") + "\n"
             )
             structured = _FakeStructuredCompletion(
                 "```json\n"
@@ -780,8 +789,9 @@ class MomentsPipelineTests(unittest.TestCase):
             logs = root / "logs"
             screen = logs / "screen"
             screen.mkdir(parents=True)
+            recent = datetime.now() - timedelta(hours=23)
             (screen / "filtered.jsonl").write_text(
-                _filtered_row(datetime(2025, 1, 1, 10, 0), "screen", "reading papers") + "\n"
+                _filtered_row(recent, "screen", "reading papers") + "\n"
             )
             tada = root / "logs-tada"
             accepted_dir = tada / "research"

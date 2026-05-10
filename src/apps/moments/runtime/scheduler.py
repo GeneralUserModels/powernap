@@ -13,6 +13,7 @@ from pathlib import Path
 from apps.moments.runtime.execute import run as execute_moment, _parse_frontmatter as parse_frontmatter
 from apps.moments.core.paths import list_task_files
 from apps.moments.core.state import clear_pending_update, load_state
+from apps.moments.core.incremental import DEFAULT_MISSING_CHECKPOINT_AGE
 from server.feature_flags import is_enabled
 
 logger = logging.getLogger(__name__)
@@ -145,14 +146,14 @@ def is_due(schedule: str, cadence: str, last_run: datetime | None) -> bool:
 def scheduled_service_due(schedule: str, last_run_path: Path) -> bool:
     """Return whether a background scheduled service should run on this poll.
 
-    A missing checkpoint means first install/startup, so seed it to now and wait
-    for the next scheduled occurrence. After that, normal catch-up applies.
+    A missing checkpoint means first install/startup, so seed it to 24 hours
+    ago and let normal catch-up decide whether the service is due.
     """
     last_run = _read_datetime(last_run_path)
     if last_run is None:
         last_run_path.parent.mkdir(parents=True, exist_ok=True)
-        last_run_path.write_text(datetime.now().isoformat())
-        return False
+        last_run = datetime.now() - DEFAULT_MISSING_CHECKPOINT_AGE
+        last_run_path.write_text(last_run.isoformat())
     return is_due(schedule, "scheduled", last_run)
 
 

@@ -43,12 +43,14 @@ export function ConnectorsStep(props: Props) {
   // expander and to suppress it entirely when nothing optional is gated on.
   const hasMicrophone = props.flag("permission_microphone");
   const hasSystemAudio = props.flag("permission_system_audio");
+  const hasBrowserCookies = props.flag("permission_browser_cookies");
   const hasGoogle = props.flag("connector_gmail") || props.flag("connector_calendar");
   const hasOutlook = props.flag("connector_outlook_email") || props.flag("connector_outlook_calendar");
   const hasDiskAccess = props.flag("permission_disk_access");
   const optionalCount =
     (hasMicrophone ? 1 : 0) +
     (hasSystemAudio ? 1 : 0) +
+    (hasBrowserCookies ? 1 : 0) +
     (hasGoogle ? 1 : 0) +
     (hasOutlook ? 1 : 0) +
     (hasDiskAccess ? 2 : 0);
@@ -95,24 +97,6 @@ export function ConnectorsStep(props: Props) {
             </div>
           </div>
 
-          {props.flag("permission_browser_cookies") && (
-            <div className="connector-row">
-              <div className="connector-icon">
-                <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.3"/><path d="M2 8h12M8 2c-2 2-2 10 0 12M8 2c2 2 2 10 0 12" stroke="currentColor" strokeWidth="1.3"/></svg>
-              </div>
-              <div className="connector-info">
-                <div className="connector-name">Browser Cookies <span className="optional-tag">Optional</span></div>
-                <div className="connector-desc">Use your Chrome sessions for authenticated browsing</div>
-              </div>
-              <div className="connector-action">
-                {props.browserCookiesGranted
-                  ? <span className="perm-badge granted">Granted</span>
-                  : <button className="btn btn-outline btn-sm" onClick={() => props.onOpenPermissionModal("browser_cookies", () => props.setBrowserCookiesGranted(true))}>Grant Access</button>
-                }
-              </div>
-            </div>
-          )}
-
           {hasOptional && (
             <button
               type="button"
@@ -135,6 +119,24 @@ export function ConnectorsStep(props: Props) {
                 </div>
               </div>
             </button>
+          )}
+
+          {showOptional && hasBrowserCookies && (
+            <div className="connector-row">
+              <div className="connector-icon">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.3"/><path d="M2 8h12M8 2c-2 2-2 10 0 12M8 2c2 2 2 10 0 12" stroke="currentColor" strokeWidth="1.3"/></svg>
+              </div>
+              <div className="connector-info">
+                <div className="connector-name">Browser Cookies</div>
+                <div className="connector-desc">Use your Chrome sessions for authenticated browsing</div>
+              </div>
+              <div className="connector-action">
+                {props.browserCookiesGranted
+                  ? <span className="perm-badge granted">Granted</span>
+                  : <button className="btn btn-outline btn-sm" onClick={() => props.onOpenPermissionModal("browser_cookies", () => props.setBrowserCookiesGranted(true))}>Grant Access</button>
+                }
+              </div>
+            </div>
           )}
 
           {showOptional && hasMicrophone && (

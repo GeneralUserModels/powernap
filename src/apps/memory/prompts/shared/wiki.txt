@@ -11,10 +11,13 @@ All normal wiki pages must be markdown files with YAML frontmatter:
 ```yaml
 ---
 title: <Page Title>
+category: <people|projects|work|interests|life|notes>
 confidence: <0.0-1.0>
 last_updated: <YYYY-MM-DD>
 ---
 ```
+
+Choose a stable category for every content page. Use `people` for collaborators, friends, family, teams, organizations, and relationship pages; `projects` for active goals, workstreams, codebases, launches, research efforts, and plans; `work` for professional patterns, workflows, decisions, responsibilities, and operating context; `interests` for durable topics, tools, hobbies, research themes, and learning areas; `life` for personal context, routines, places, logistics, habits, and non-work commitments; and `notes` only when the page is useful but does not yet fit a stronger category.
 
 Use inline claim confidence scores like `[c:0.7]` on meaningful claims and inferences. Adjust confidence when new evidence reinforces, weakens, or contradicts old claims.
 
@@ -25,4 +28,4 @@ Special files:
 - `log.md`: append-only dated operations log.
 - `schema.md`: conventions document.
 
-Do not delete existing wiki pages. Update, split, or lower confidence instead. If a page has lost topical coherence, split it into focused sub-pages and turn the original into a hub.
+Do not delete existing wiki pages during normal page updates. Update, split, or lower confidence instead. If a page has lost topical coherence, split it into focused sub-pages; only the finalize pass may delete the original page, and only when it is now a pure redirect/tombstone like "(moved)" or all useful content has been carried into replacement pages.

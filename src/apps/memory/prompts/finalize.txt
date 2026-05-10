@@ -45,4 +45,4 @@ Use the provided page metadata to update `index.md` and `log.md`. Do not list or
 
 Do not write files directly. Python will apply the returned operations after validating paths.
 
-When finished, return the finalize pass result. The structured response schema enforces `create_pages`, `update_pages`, `path`, `markdown`, and `notes`.
+When finished, return the finalize pass result. The structured response schema enforces `create_pages`, `update_pages`, `delete_pages`, `path`, `markdown`, and `notes`.

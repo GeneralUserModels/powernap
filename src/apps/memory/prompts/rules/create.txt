@@ -17,6 +17,7 @@ Not allowed:
 
 Execution guidance:
 - Read evidence for this candidate before writing.
-- Keep the page compact but useful: facts, why it matters, confidence, links, and likely future relevance.
+- Keep the page compact but useful: facts, category, why it matters, confidence, links, and likely future relevance.
+- Include the best-fit `category` in frontmatter, using `notes` only when no stronger category fits.
 - Use source dates exactly as provided in evidence.
 - Avoid dangling `[[wiki-links]]`; link only to represented pages.

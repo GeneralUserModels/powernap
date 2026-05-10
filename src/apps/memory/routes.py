@@ -34,7 +34,7 @@ def _parse_frontmatter(text: str) -> dict:
     for line in text[3:end].strip().splitlines():
         if ":" in line:
             key, _, value = line.partition(":")
-            fm[key.strip()] = value.strip()
+            fm[key.strip()] = value.strip().strip("\"'")
     return fm
 
 
@@ -61,7 +61,7 @@ async def list_pages(request: Request, q: str = Query(default="", description="S
         text = md_file.read_text(errors="replace")
         fm = _parse_frontmatter(text)
         title = _TITLE_PREFIX_RE.sub("", fm.get("title", rel.stem.replace("-", " ").title()))
-        category = str(rel.parent) if str(rel.parent) != "." else None
+        category = fm.get("category") or (str(rel.parent) if str(rel.parent) != "." else None)
 
         if query:
             haystack = f"{title}\n{category or ''}\n{text}".lower()
@@ -181,6 +181,5 @@ async def get_status(request: Request):
         "exists": memory_dir.exists(),
         "last_ingest": _read_ts(memory_dir / ".last_ingest"),
         "last_lint": _read_ts(memory_dir / ".last_lint"),
-        "last_service_run": _read_ts(memory_dir / ".memory_last_run"),
         "page_count": page_count,
     }

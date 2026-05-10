@@ -5,11 +5,15 @@ const path = require("path");
 
 const repoRoot = path.resolve(__dirname, "..");
 const logDir = path.resolve(repoRoot, process.env.TADA_LOG_DIR || "logs");
+const tadaDir = path.resolve(repoRoot, process.env.TADA_TADA_DIR || "logs-tada");
 const oldTimestamp = "2000-01-01T00:00:00";
 
 const targets = {
-  memex: path.join(logDir, "memory", ".memory_last_run"),
-  discovery: path.join(logDir, "moments", ".discovery_last_run"),
+  memex: [path.join(logDir, "memory", ".last_ingest")],
+  discovery: [
+    path.join(tadaDir, "_discovery", ".last_discovery"),
+    path.join(tadaDir, "_discovery", ".last_promotion"),
+  ],
 };
 
 const requested = process.argv[2] || "all";
@@ -22,9 +26,11 @@ for (const name of names) {
     process.exit(1);
   }
 
-  fs.mkdirSync(path.dirname(target), { recursive: true });
-  fs.writeFileSync(target, oldTimestamp);
-  console.log(`${name}: wrote ${target}`);
+  for (const file of target) {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, oldTimestamp);
+    console.log(`${name}: wrote ${file}`);
+  }
 }
 
 console.log("Launch or keep the app running; the next scheduler poll should treat the target as due.");

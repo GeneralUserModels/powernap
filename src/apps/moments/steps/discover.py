@@ -37,7 +37,7 @@ from apps.moments.core.candidates import (
     validate_candidate,
     write_candidates_jsonl,
 )
-from apps.moments.core.incremental import read_checkpoint, write_checkpoint
+from apps.moments.core.incremental import DEFAULT_MISSING_CHECKPOINT_AGE, read_checkpoint, write_checkpoint
 from apps.moments.core.paths import summarize_tada_tasks
 from apps.moments.schemas.structured import DraftActionPayload, IdeaPayload, ReconcilePayload
 
@@ -694,7 +694,7 @@ def run(
     state_dir.mkdir(parents=True, exist_ok=True)
     _ensure_sandbox([str(tada_dir.resolve())])
 
-    last_discovery = read_checkpoint(checkpoint_path)
+    last_discovery = read_checkpoint(checkpoint_path, default_age=DEFAULT_MISSING_CHECKPOINT_AGE)
     mode = "first_run" if last_discovery is None else "incremental"
     activity_since = last_discovery if last_discovery is not None else _initial_discovery_since(logs_path)
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
