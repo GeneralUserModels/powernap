@@ -20,7 +20,7 @@ load_dotenv()
 from agent.builder import build_agent
 from apps.common.activity_streams import DEFAULT_FILTERED_STREAM_SOURCES
 from apps.common.structured_ops import StructuredOpsError, extract_json_object, require_list, require_string, safe_rel_path
-from apps.memory.schemas.structured import ExistingPageUpdatePayload, FinalizePageOpsPayload, NewPageCreatePayload
+from apps.memory.schemas.structured import ExistingPageUpdatePayload, FinalizePageOpsPayload, InventoryPayload, NewPageCreatePayload
 from apps.moments.core.incremental import DEFAULT_MISSING_CHECKPOINT_AGE, read_checkpoint, write_checkpoint
 
 
@@ -41,16 +41,6 @@ FILTERED_STREAM_SOURCES = DEFAULT_FILTERED_STREAM_SOURCES
 
 SPECIAL_MEMORY_FILES = {"index.md", "log.md", "schema.md"}
 ARCHIVE_MEMORY_DIR = "_archive"
-INVENTORY_KEYS = {
-    "mode",
-    "sources_to_read",
-    "existing_pages_to_read",
-    "likely_pages_to_create",
-    "likely_pages_to_update",
-    "backfill_sources_to_sample",
-    "rationale",
-}
-_JSON_BLOCK_RE = re.compile(r"```json\s*(\{.*?\})\s*```", re.DOTALL)
 _WIKI_LINK_RE = re.compile(r"\[\[([^\]\n]+)\]\]")
 PREVIEW_MAX_FILES = 20
 PREVIEW_MAX_LINES = 8
@@ -544,21 +534,9 @@ def _format_json(data: Any) -> str:
 
 
 def _parse_inventory(result: str, expected_mode: str) -> dict[str, Any]:
-    matches = _JSON_BLOCK_RE.findall(result)
-    if not matches:
-        raise ValueError("Inventory pass did not return a fenced JSON block")
-    payload = json.loads(matches[-1])
-    missing = INVENTORY_KEYS - set(payload)
-    if missing:
-        raise ValueError(f"Inventory JSON missing keys: {', '.join(sorted(missing))}")
+    payload = InventoryPayload.model_validate_json(result).model_dump()
     if payload.get("mode") != expected_mode:
         raise ValueError(f"Inventory mode {payload.get('mode')!r} did not match expected mode {expected_mode!r}")
-    list_keys = INVENTORY_KEYS - {"mode", "rationale"}
-    for key in list_keys:
-        if not isinstance(payload.get(key), list):
-            raise ValueError(f"Inventory JSON key {key!r} must be a list")
-    if not isinstance(payload.get("rationale"), str):
-        raise ValueError("Inventory JSON key 'rationale' must be a string")
     return payload
 
 
@@ -933,6 +911,12 @@ def run(
         progress.phase_callback(0, 20),
         subagent_model,
         subagent_api_key,
+        final_response_model=InventoryPayload,
+        final_instruction=(
+            "Convert the inventory work into the required structured inventory payload. "
+            "Use only paths and page titles grounded in the conversation and tool results."
+        ),
+        final_metadata_app="memory_inventory",
     )
     progress.emit(20)
     inventory = _parse_inventory(inventory_result, inputs.mode)

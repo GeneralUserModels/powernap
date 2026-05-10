@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field
 
 RELATIVE_MARKDOWN_PATH = r"^[^/.\n][^\n]*\.md$"
@@ -22,6 +24,16 @@ class PageDeleteOp(StrictModel):
 
 class PageMarkdownOp(StrictModel):
     markdown: str = Field(min_length=1)
+
+
+class InventoryPayload(StrictModel):
+    mode: Literal["first_run", "incremental", "no_new_data"]
+    sources_to_read: list[str]
+    existing_pages_to_read: list[str]
+    likely_pages_to_create: list[str]
+    likely_pages_to_update: list[str]
+    backfill_sources_to_sample: list[str]
+    rationale: str
 
 
 class ExistingPageUpdatePayload(StrictModel):

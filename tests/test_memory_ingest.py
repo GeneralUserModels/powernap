@@ -17,7 +17,7 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 from apps.memory import ingest
-from apps.memory.schemas.structured import ExistingPageUpdatePayload, FinalizePageOpsPayload, NewPageCreatePayload
+from apps.memory.schemas.structured import ExistingPageUpdatePayload, FinalizePageOpsPayload, InventoryPayload, NewPageCreatePayload
 from apps.moments.core.incremental import DEFAULT_MISSING_CHECKPOINT_AGE, read_checkpoint
 from apps.moments.runtime.scheduler import scheduled_service_due
 
@@ -158,9 +158,17 @@ class MemoryIngestTests(unittest.TestCase):
                     self.assertIs(kwargs.get("final_response_model"), FinalizePageOpsPayload)
                     self.assertEqual(kwargs.get("final_metadata_app"), "memory_finalize_pages")
                 if pass_name == "inventory":
-                    return """```json
-{"mode":"no_new_data","sources_to_read":[],"existing_pages_to_read":[],"likely_pages_to_create":["Project"],"likely_pages_to_update":[],"backfill_sources_to_sample":[],"rationale":"test"}
-```"""
+                    self.assertIs(kwargs.get("final_response_model"), InventoryPayload)
+                    self.assertEqual(kwargs.get("final_metadata_app"), "memory_inventory")
+                    return json.dumps({
+                        "mode": "no_new_data",
+                        "sources_to_read": [],
+                        "existing_pages_to_read": [],
+                        "likely_pages_to_create": ["Project"],
+                        "likely_pages_to_update": [],
+                        "backfill_sources_to_sample": [],
+                        "rationale": "test",
+                    })
                 if pass_name == "create_page":
                     self.assertIn("## Candidate Page", instruction)
                     self.assertIn("`Project`", instruction)
@@ -207,9 +215,16 @@ class MemoryIngestTests(unittest.TestCase):
                 if pass_name == "inventory":
                     on_round(1, 50)
                     on_round(25, 50)
-                    return """```json
-{"mode":"no_new_data","sources_to_read":[],"existing_pages_to_read":[],"likely_pages_to_create":["Alpha","Beta"],"likely_pages_to_update":[],"backfill_sources_to_sample":[],"rationale":"test"}
-```"""
+                    self.assertIs(kwargs.get("final_response_model"), InventoryPayload)
+                    return json.dumps({
+                        "mode": "no_new_data",
+                        "sources_to_read": [],
+                        "existing_pages_to_read": [],
+                        "likely_pages_to_create": ["Alpha", "Beta"],
+                        "likely_pages_to_update": [],
+                        "backfill_sources_to_sample": [],
+                        "rationale": "test",
+                    })
                 if pass_name == "create_page":
                     title = "Alpha" if "`Alpha`" in instruction else "Beta"
                     if title == "Alpha":
@@ -265,9 +280,15 @@ class MemoryIngestTests(unittest.TestCase):
 
             today = datetime.now().strftime("%Y-%m-%d")
             agents = [
-                _FakeMemoryAgent("""```json
-{"mode":"no_new_data","sources_to_read":[],"existing_pages_to_read":["project.md"],"likely_pages_to_create":[],"likely_pages_to_update":["project.md"],"backfill_sources_to_sample":[],"rationale":"test"}
-```"""),
+                _FakeMemoryAgent(json.dumps({
+                    "mode": "no_new_data",
+                    "sources_to_read": [],
+                    "existing_pages_to_read": ["project.md"],
+                    "likely_pages_to_create": [],
+                    "likely_pages_to_update": ["project.md"],
+                    "backfill_sources_to_sample": [],
+                    "rationale": "test",
+                })),
                 _FakeMemoryAgent(json.dumps({
                     "create_pages": [],
                     "update_pages": [{
@@ -298,6 +319,9 @@ class MemoryIngestTests(unittest.TestCase):
             with patch.object(ingest, "build_agent", side_effect=[(agent, None) for agent in agents]):
                 result = ingest.run(str(logs), model="fake-model")
 
+            inventory_kwargs = agents[0].calls[0]["kwargs"]
+            self.assertIs(inventory_kwargs["final_response_model"], InventoryPayload)
+            self.assertEqual(inventory_kwargs["final_metadata_app"], "memory_inventory")
             update_kwargs = agents[1].calls[0]["kwargs"]
             self.assertIs(update_kwargs["final_response_model"], ExistingPageUpdatePayload)
             self.assertEqual(update_kwargs["final_metadata_app"], "memory_update_page")
@@ -328,9 +352,16 @@ class MemoryIngestTests(unittest.TestCase):
 
             def fake_pass(pass_name, instruction, logs_dir, model, api_key, on_round, subagent_model, subagent_api_key, **kwargs):
                 if pass_name == "inventory":
-                    return """```json
-{"mode":"no_new_data","sources_to_read":[],"existing_pages_to_read":[],"likely_pages_to_create":["Project"],"likely_pages_to_update":[],"backfill_sources_to_sample":[],"rationale":"test"}
-```"""
+                    self.assertIs(kwargs.get("final_response_model"), InventoryPayload)
+                    return json.dumps({
+                        "mode": "no_new_data",
+                        "sources_to_read": [],
+                        "existing_pages_to_read": [],
+                        "likely_pages_to_create": ["Project"],
+                        "likely_pages_to_update": [],
+                        "backfill_sources_to_sample": [],
+                        "rationale": "test",
+                    })
                 if pass_name == "create_page":
                     return "```json\n" + json.dumps({
                         "create_pages": [{

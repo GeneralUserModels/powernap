@@ -31,22 +31,16 @@ For first runs, discovery is expected: inspect the available source layout, samp
 
 When planning discovery, explicitly consider prior chats under `chats/`, active conversations under `active-conversations/`, and Tada task/result artifacts under `{logs_dir}/../logs-tada/`. These sources often contain richer interaction data than the changed-input preview and should be included when they are likely to reveal page-worthy people, projects, workstreams, tools, decisions, or recurring themes.
 
-End with a single fenced JSON block. It must be the last thing in your final message.
-
-```json
-{{
-  "mode": "{mode}",
-  "sources_to_read": ["relative/source/path"],
-  "existing_pages_to_read": ["relative/wiki/page.md"],
-  "likely_pages_to_create": ["Natural Page Title"],
-  "likely_pages_to_update": ["relative/wiki/page.md"],
-  "backfill_sources_to_sample": ["relative/older/source/path"],
-  "rationale": "Brief explanation of the plan."
-}}
-```
+Return an inventory payload with these fields:
+- `mode`: `{mode}`
+- `sources_to_read`: relative log source paths to inspect
+- `existing_pages_to_read`: relative wiki page paths to inspect
+- `likely_pages_to_create`: natural page titles to create
+- `likely_pages_to_update`: relative wiki page paths to update
+- `backfill_sources_to_sample`: relative older source paths to sample
+- `rationale`: brief explanation of the plan
 
 Rules:
-- Return only valid JSON in the fenced block.
 - Use paths relative to `{logs_dir}/` for log sources and relative to `{memory_dir}/` for wiki pages.
 - Do not invent files you have not seen unless clearly labeled as likely page titles.
 - Prefer a balanced starter map across people, projects, work, interests, life, and notes when the evidence supports it.
