@@ -49,7 +49,6 @@ def _candidate(**overrides):
         "specific_instructions": "Find new papers and summarize why they matter.",
         "desired_artifact": "A ranked feed of papers.",
         "evidence": ["memory/index.md mentions research"],
-        "source_paths": ["memory/index.md"],
         "likely_next_need": "The user will need to keep up with new research without manually scanning sources.",
         "why_now": "The user is actively researching.",
         "user_value": "Saves triage time.",
@@ -66,7 +65,6 @@ def _idea(**overrides):
         "artifact": "A ranked feed of papers.",
         "why_useful": "Saves triage time.",
         "evidence": ["memory/index.md mentions research"],
-        "source_paths": ["memory/index.md"],
         "cadence_hint": "scheduled",
         "relation_to_existing": "new",
     }

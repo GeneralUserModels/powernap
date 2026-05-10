@@ -25,7 +25,6 @@ class CandidatePayload(StrictModel):
     specific_instructions: str
     desired_artifact: str
     evidence: list[str]
-    source_paths: list[str]
     likely_next_need: str
     why_now: str
     user_value: str
@@ -46,7 +45,6 @@ class MomentIdea(StrictModel):
     artifact: str
     why_useful: str
     evidence: list[str]
-    source_paths: list[str]
     cadence_hint: Literal["once", "scheduled", "trigger"]
     relation_to_existing: Literal["new", "possible_update", "duplicate", "weak"]
 

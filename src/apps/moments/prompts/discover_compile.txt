@@ -64,8 +64,7 @@ When compiling, keep candidate fields grounded in the idea card:
 - `desired_artifact` should name one bounded final artifact and its main use.
 - `specific_instructions` should give the executor the artifact shape: sections to write, comparison axes, questions to answer, recommendations to produce, or decision criteria. Preserve the source facts in the idea card.
 - When an idea implies multiple outputs, keep only the output most directly supported by the cited evidence unless the outputs are parts of the same named artifact.
-- `evidence` is prose: each item should state what the source shows and include the pointer.
-- `source_paths` is for pointer-only references, such as `screen/filtered.jsonl:123`.
+- `evidence` is prose: each item should state what the source shows and include the pointer, such as `screen/filtered.jsonl:123`.
 - `why_now` should connect the evidence to the upcoming use, not only restate recent activity.
 - `user_value` should name the concrete benefit: clearer decision, stronger meeting, better draft, reduced missed context, or saved synthesis time.
 

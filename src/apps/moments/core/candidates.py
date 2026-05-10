@@ -32,7 +32,6 @@ class MomentCandidate:
     specific_instructions: str
     desired_artifact: str
     evidence: list[str]
-    source_paths: list[str]
     likely_next_need: str
     why_now: str
     user_value: str
@@ -52,7 +51,6 @@ class MomentCandidate:
             "specific_instructions": self.specific_instructions,
             "desired_artifact": self.desired_artifact,
             "evidence": self.evidence,
-            "source_paths": self.source_paths,
             "likely_next_need": self.likely_next_need,
             "why_now": self.why_now,
             "user_value": self.user_value,
@@ -152,7 +150,6 @@ def validate_candidate(raw: dict[str, Any]) -> MomentCandidate:
         specific_instructions=_string(raw.get("specific_instructions"), "specific_instructions"),
         desired_artifact=_string(raw.get("desired_artifact"), "desired_artifact"),
         evidence=_string_list(raw.get("evidence"), "evidence"),
-        source_paths=_string_list(raw.get("source_paths"), "source_paths"),
         likely_next_need=_string(raw.get("likely_next_need"), "likely_next_need"),
         why_now=_string(raw.get("why_now"), "why_now"),
         user_value=_string(raw.get("user_value"), "user_value"),
@@ -266,12 +263,6 @@ def render_accepted_markdown(candidate: MomentCandidate) -> str:
         "",
     ])
     lines.extend(f"- {item}" for item in (candidate.evidence or ["(none supplied)"]))
-    lines.extend([
-        "",
-        "## Source Paths",
-        "",
-    ])
-    lines.extend(f"- `{item}`" for item in (candidate.source_paths or ["(none supplied)"]))
     lines.extend([
         "",
         "## User Value",

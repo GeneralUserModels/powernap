@@ -94,7 +94,6 @@ For `relation_to_existing`, use:
       "title": "Short useful idea title",
       "topic_hint": "kebab-or-plain-topic",
       "evidence": ["source/path:line at timestamp shows the user doing or needing X"],
-      "source_paths": ["relative/source/path:line"],
       "cadence_hint": "once",
       "relation_to_existing": "new"
     }}

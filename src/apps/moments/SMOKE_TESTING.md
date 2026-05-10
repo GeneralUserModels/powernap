@@ -12,7 +12,7 @@ A useful smoke test should answer:
 
 - Does discovery produce grounded, future-facing moments?
 - Are candidates based on the selected log evidence, not random repo context?
-- Are source paths useful enough for the executor to follow up?
+- Does `evidence` include useful source pointers for the executor to follow up?
 - Does promotion rank the strongest moments first?
 - Did the prompt change reduce the specific failure mode you are targeting?
 
@@ -93,7 +93,7 @@ Avoid slices that are too clean:
 - Do not include only rows that mention the target topic. Include adjacent rows
   from the same day so source ranking, merging, and rejection behavior are tested.
 - Do not judge from the generated summary alone. Inspect candidate JSON, evidence,
-  source paths, and promotion ordering.
+  and promotion ordering.
 
 ## Build A Temp Log Slice
 
@@ -266,7 +266,6 @@ for idx, line in enumerate(latest.read_text().splitlines(), start=1):
         "desired_artifact",
         "specific_instructions",
         "evidence",
-        "source_paths",
         "why_now",
         "user_value",
     ]:
@@ -334,7 +333,7 @@ the actual discovered moments, then keep only the smallest durable improvement.
    candidate, inspect:
    - `title`, `likely_next_need`, and `desired_artifact`;
    - `specific_instructions` for unsupported facts or over-broad scope;
-   - `evidence` and `source_paths` for useful follow-up pointers;
+   - `evidence` for useful follow-up pointers;
    - `why_now` for causal overreach;
    - promotion rank and reason.
 6. Pick winners by behavior, not by rule count. If a combined variant becomes
@@ -419,7 +418,7 @@ Strong candidates usually have:
 
 - a concrete future need;
 - a concrete artifact the executor can produce;
-- source paths that point back to activity evidence;
+- evidence entries that point back to activity sources;
 - enough specificity for execution without hardcoding a brittle implementation;
 - a clear reason this helps before the user asks.
 
