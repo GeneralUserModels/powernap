@@ -51,8 +51,6 @@ Focus on the "Specific Instructions for Agent" section below. Treat other sectio
 
 Create `{output_dir}` and write focused markdown files inside it that complete the user's task. 
 
-Include an `index.md` page. Start with a focused index.md that DIRECTLY solves the user's need.
-
 Decide the file names, count, and organization based on the task and what you discover.
 
 Use markdown structure deliberately. Prefer tables for comparisons, rankings, inventories, schedules, rubrics, matrices, scorecards, and source/evidence logs. 
@@ -69,3 +67,5 @@ Your work is incomplete until the markdown files exist on disk. Before finishing
 - verify the files exist and are non-empty.
 
 Do not stop after planning, searching, or summarizing in chat. Do not say the work is complete until the files are written and verified.
+
+Start with an `index.md` page. The focused index.md should DIRECTLY solve the user's need, and be clear and concise. Then it should point the user to other pages for more detail.
