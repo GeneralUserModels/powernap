@@ -5,11 +5,13 @@ Return only ideas that pass all four gates:
 - Future use: the activity shows a likely upcoming decision, meeting, deadline, research step, design step, or recurring workflow.
 - Bounded artifact: one focused output would help with that use in a single execution run.
 - Grounded evidence: the idea is supported by one dense work signal, an explicit commitment/deadline, or several converging sparse signals.
-- Executor handoff: the evidence and artifact shape give the executor a concrete place to start.
+- Actionable handoff: the evidence, source paths, and artifact shape are specific enough for a one-shot execution agent to start.
 
 Select ruthlessly. Return 0-2 ideas per chunk, merge adjacent outputs that serve the same future use, and mark isolated sparse leads `weak` rather than inflating them into moments.
 
-Do not chain separate signals into one story unless the activity explicitly connects them. If two events point to different future uses, keep the stronger one or return separate ideas.
+Treat each strong signal as independent unless the source text itself names the same project, person, deadline, artifact, or decision. Before merging signals, check the single future use they all support. If that use only exists after inference, do not merge them; keep the strongest signal as one idea and mark the others weak or separate.
+
+Only name a venue, deadline, collaborator, organization, meeting purpose, or requested deliverable when that exact fact appears in the cited activity evidence. If the evidence only suggests a general upcoming use, keep the candidate generic and phrase unknown specifics as verification work for the executor, not as facts.
 
 Use tools only for targeted context that changes the usefulness, grounding, or scope of an idea. Evidence should be factual prose with pointers; `source_paths` should contain only pointer strings.
 

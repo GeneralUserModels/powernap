@@ -211,6 +211,114 @@ Use this loop for prompt work. In most cases, you may need to only really focus 
 
 **Keep iterating repeatedly on prompts**: run over and over again till you're satistifed, recording progress and finalized candidates in an experiment log.
 
+## Parallel Failure-Mode Exploration Loop
+
+Use this when a smoke run shows a specific class of bad moments. The goal is to
+test several small, generic prompt changes against the same temp slice, compare
+the actual discovered moments, then keep only the smallest durable improvement.
+
+1. Name the failure modes from the rubric before writing variants. Useful
+   failure-mode targets include:
+   - unrelated strong signals getting chained into one narrative;
+   - specific venues, deadlines, collaborators, organizations, or deliverables
+     being inferred without cited evidence;
+   - high-volume screen activity crowding out explicit low-volume commitments;
+   - active work already being handled by the user or another assistant being
+     proposed as a future moment;
+   - broad artifacts that cannot be completed in one executor run.
+2. Create prompt-copy variants in a temp directory. Keep each variant focused on
+   one failure mode when possible, plus one combined variant to test whether the
+   rules interact badly.
+3. Run each variant in its own subprocess and its own copied `logs/` directory.
+   Discovery prompt text is loaded into module globals, and discovery writes
+   checkpoints under `Path(logs_dir).parent / "logs-tada"`, so do not run
+   variants in one Python interpreter or one shared run directory.
+4. For each run, run discovery and promotion end to end. Promotion order is part
+   of the judgment because a prompt can produce a useful candidate that still
+   loses to a worse, louder one.
+5. Compare candidate JSON across variants, not only run summaries. For each
+   candidate, inspect:
+   - `title`, `likely_next_need`, and `desired_artifact`;
+   - `specific_instructions` for unsupported facts or over-broad scope;
+   - `evidence` and `source_paths` for useful follow-up pointers;
+   - `why_now` for causal overreach;
+   - promotion rank and reason.
+6. Pick winners by behavior, not by rule count. If a combined variant becomes
+   self-referential, over-constrained, or starts proposing active debugging work,
+   prefer the narrower variant even if it misses one secondary opportunity.
+7. Record the exact slice, variants, candidates, promotion order, and judgment in
+   `src/apps/moments/experiments/`. That directory is intentionally ignored, so
+   keep concrete smoke examples there rather than in reusable prompts.
+
+Good generic variants to try:
+
+- **Shared-use test**: Treat each strong signal as independent unless the source
+  text itself names the same project, person, deadline, artifact, or decision.
+  Before merging signals, check the single future use they all support. If that
+  use only exists after inference, do not merge them; keep the strongest signal
+  as one idea and mark the others weak or separate.
+- **Specific fact discipline**: Only name a venue, deadline, collaborator,
+  organization, meeting purpose, or requested deliverable when that exact fact
+  appears in the cited activity evidence. If evidence suggests only a general
+  upcoming use, keep the candidate generic and phrase unknown specifics as
+  verification work for the executor, not as facts.
+- **Commitment tie-breaker**: Scan sparse and non-screen sources for explicit
+  meetings, deadlines, due dates, promised follow-ups, scheduled events, or
+  requests from other people. Test this carefully: it can improve meeting/deadline
+  recall, but it can also promote work already being actively handled.
+
+Minimal harness pattern:
+
+```bash
+ROUND_ROOT=/tmp/powernap-moments-failure-round
+BASE_SLICE=/tmp/powernap-moments-smoke
+
+# For each variant, create:
+# $ROUND_ROOT/variants/<name>/overrides.json
+# with keys like DISCOVER_RULES, DISCOVER_TEMPLATE, or DISCOVER_COMPILE_TEMPLATE.
+
+VARIANT_NAME=shared_use ROUND_ROOT="$ROUND_ROOT" BASE_SLICE="$BASE_SLICE" \
+.venv/bin/python - <<'PY'
+import json
+import os
+import shutil
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path("src").resolve()))
+
+from apps.moments.steps import discover, promote
+
+name = os.environ["VARIANT_NAME"]
+round_root = Path(os.environ["ROUND_ROOT"])
+base = Path(os.environ["BASE_SLICE"])
+run_root = round_root / "runs" / name
+
+if run_root.exists():
+    shutil.rmtree(run_root)
+shutil.copytree(base / "logs", run_root / "logs")
+
+state = run_root / "logs-tada" / "_discovery"
+state.mkdir(parents=True, exist_ok=True)
+(state / ".last_discovery").write_text("2026-04-25T00:00:00")
+
+for attr, value in json.loads((round_root / "variants" / name / "overrides.json").read_text()).items():
+    setattr(discover, attr, value)
+
+cfg = json.loads(Path("tada-config.json").read_text())
+model = cfg.get("moments_agent_model") or "gemini/gemini-3-flash-preview"
+api_key = cfg.get("moments_agent_api_key") or cfg.get("default_llm_api_key") or None
+logs = str(run_root / "logs")
+
+print(discover.run(logs, model=model, api_key=api_key))
+print(promote.run(logs, model=model, api_key=api_key, n=8))
+PY
+```
+
+Run the same harness for multiple variant names in parallel with separate stdout
+logs, then compare the latest candidate JSONL under each variant's
+`logs-tada/_discovery/candidates/`.
+
 ## Quality Rubric
 
 Strong candidates usually have:
