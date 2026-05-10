@@ -30,10 +30,6 @@ from apps.moments.schemas.structured import PromotionPayload
 
 _PROMPTS = Path(__file__).resolve().parent.parent / "prompts"
 PROMOTE_TEMPLATE = (_PROMPTS / "promote.txt").read_text()
-PROMOTE_RULES = (_PROMPTS / "rules" / "promote.txt").read_text()
-SHARED_MOMENTS = (_PROMPTS / "shared" / "moments.txt").read_text()
-SHARED_EXECUTOR_CAPABILITIES = (_PROMPTS / "shared" / "executor_capabilities.txt").read_text()
-SHARED_QUALITY_BAR = (_PROMPTS / "shared" / "quality_bar.txt").read_text()
 STRUCTURED_OUTPUT_ATTEMPTS = 2
 logger = logging.getLogger(__name__)
 
@@ -123,10 +119,7 @@ def run(
     candidate_json = json.dumps([c.to_json() for c in candidates], indent=2)
     instruction = PROMOTE_TEMPLATE.format(
         now=now,
-        promote_rules=PROMOTE_RULES,
-        shared_executor_capabilities=SHARED_EXECUTOR_CAPABILITIES,
-        shared_quality_bar=SHARED_QUALITY_BAR,
-        shared_moments=SHARED_MOMENTS.format(tada_dir=str(tada_path)),
+        tada_dir=str(tada_path),
         accepted_moments=summarize_tada_tasks(tada_path),
         feedback_state_summary=_feedback_state_summary(tada_path),
         candidate_json=candidate_json,

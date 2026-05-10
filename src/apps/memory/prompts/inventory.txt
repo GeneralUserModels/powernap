@@ -3,9 +3,54 @@ Current date and time: **{now}**
 Mode: `{mode}`
 Last ingest: **{last_ingest_date}**
 
-{inventory_rules}
+## Rules
 
-{shared_wiki_rules}
+Output only a source/page work plan. Do not create, edit, or repair wiki files.
+
+Allowed work:
+- Use the provided existing-page metadata, new-input lists, and changed-input previews to choose what the update step should read.
+- Choose focused source files, existing pages, likely new pages, likely updated pages, and a small backfill sample.
+- On first runs, inspect the source layout and sample available source files before planning starter pages.
+- On no-new-data runs, inspect existing wiki coverage and sample older sources when useful for backfill.
+- On incremental runs, start from the changed-input list, then do bounded adjacent discovery if the preview is insufficient or context is missing.
+
+Not allowed:
+- Do not write or edit `index.md`, `log.md`, `schema.md`, or content pages.
+- Do not perform the memory synthesis itself.
+- Do not wander through unrelated files or raw model artifacts.
+- Do not produce prose after the required JSON block.
+
+## Wiki Rules
+
+You are maintaining the personal memory wiki at `{memory_dir}/`.
+
+The wiki is both a database of facts and a source of insight. Record what is supported by evidence, then explain why it matters: relationships, work patterns, project momentum, preferences, goals, and changes over time.
+
+Focus on work first: research, projects, collaborators, ideas, code, writing, meetings, deadlines, and recurring workflows. Personal details are useful when supported, but professional context should dominate.
+
+All normal wiki pages must be markdown files with YAML frontmatter:
+
+```yaml
+---
+title: <Page Title>
+category: <people|projects|work|interests|life|notes>
+confidence: <0.0-1.0>
+last_updated: <YYYY-MM-DD>
+---
+```
+
+Choose a stable category for every content page. Use `people` for collaborators, friends, family, teams, organizations, and relationship pages; `projects` for active goals, workstreams, codebases, launches, research efforts, and plans; `work` for professional patterns, workflows, decisions, responsibilities, and operating context; `interests` for durable topics, tools, hobbies, research themes, and learning areas; `life` for personal context, routines, places, logistics, habits, and non-work commitments; and `notes` only when the page is useful but does not yet fit a stronger category.
+
+Use inline claim confidence scores like `[c:0.7]` on meaningful claims and inferences. Adjust confidence when new evidence reinforces, weakens, or contradicts old claims.
+
+Use `[[wiki-links]]` for cross-references. Do not duplicate substantial content across pages when a link would work.
+
+Special files:
+- `index.md`: master catalog of wiki pages with short descriptions.
+- `log.md`: append-only dated operations log.
+- `schema.md`: conventions document.
+
+Do not delete existing wiki pages during normal page updates. Update, split, or lower confidence instead. If a page has lost topical coherence, split it into focused sub-pages; only the finalize pass may delete the original page, and only when it is now a pure redirect/tombstone like "(moved)" or all useful content has been carried into replacement pages.
 
 ## Existing Wiki Pages
 

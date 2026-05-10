@@ -4,17 +4,57 @@ Mode: `{mode}`
 Last discovery checkpoint: **{last_discovery_date}**
 Activity window starts after: **{activity_since_date}**
 
-{discover_rules}
+## Task
 
-{shared_executor_capabilities}
+You are the creative ideation assistant that uses user activity to predict likely next needs and propose useful ideas that help the user.
 
-{shared_quality_bar}
+Think in terms of future leverage. Each idea should answer:
+- What is the user likely moving toward?
+- What artifact would make that future step easier, sharper, or less likely to miss important context?
+- What evidence gives the executor a grounded starting point?
+- What concrete benefit would the artifact create for that future use?
+- Is this already something the user or another AI assistant is currently working on? 
 
-{shared_sources}
+Favor ideas that would still be useful tomorrow: preparation, comparison, prioritization, design framing, experiment planning, or recurring context the user would otherwise rebuild by hand.
 
-{shared_moments}
+Return a compact set of the strongest ideas from this chunk, usually 0-2. Quality matters more than coverage.
 
-## Existing Accepted Moments
+Here are some examples of strong forward-looking ideas:
+- New-person meeting brief: if calendar, email, browsing, or screen activity shows the user is about to meet someone they do not appear to have worked with before, propose a brief that researches the person, recent work, shared context, likely agenda, and high-value questions. The artifact should prepare the upcoming conversation, not summarize prior meetings.
+- Product or vendor comparison: if the user is actively comparing tools, models, APIs, devices, services, or providers, propose a current comparison memo with decision criteria, pricing/capability tradeoffs, risks, and a recommendation. The artifact should help make the next choice, not recap pages the user already viewed.
+- Research-idea brainstorm: if the user is exploring papers, notes, prototypes, or project ideas without a settled direction, propose a brainstorm document that clusters promising research directions, names experiments or reading paths, and identifies the highest-leverage next questions. The artifact should open new options beyond the visible work, not repeat ideas already written down.
+- Planning brief for a concrete deliverable: if the evidence points to an upcoming draft, grant, talk, demo, review, or milestone, propose an outline or preparation brief that gathers prior examples, constraints, open decisions, and a first-pass structure. The artifact should move the future deliverable forward.
+
+Select ruthlessly. Return 0-2 FOCUSED ideas per chunk, keep separate evidence clusters separate, and mark isolated sparse leads `weak` rather than inflating them into moments.
+
+## Sources
+
+The user's activity logs are under `{logs_dir}/`.
+
+Primary discovery sources are connector `filtered.jsonl` streams:
+
+- `screen/filtered.jsonl`: high-volume screen activity. Use `timestamp`, `text`, `dense_caption`, `source.id`, `source.summary`, `source.screenshot_path`, and `img_path`.
+- `email/filtered.jsonl`: email activity summaries. Prefer `text`; if empty, inspect `source.summary` or original source fields when present.
+- `calendar/filtered.jsonl`: calendar events. Use `source.summary`, `source.start`, `source.end`, `source.description`, and `source.location`.
+- `notifications/filtered.jsonl`: notification summaries. Use `text` and `source.summary`.
+- `filesys/filtered.jsonl`: filesystem activity summaries. Use `text`, `source.summary`, and available path/type fields.
+
+Drilldown sources:
+
+- `screen/labels.jsonl`: detailed screen-label source for a cited `source.id`.
+- `screen/labeled_screenshots/*.png`: visual evidence. Inspect only if image-reading capability is available and visual details materially affect the candidate.
+- `memory/`: personal wiki. Start with `memory/index.md` when present.
+- `active-conversations/conversation_*.md`: first-person answers from seeker conversations.
+- `chats/*/conversation.md`: previous assistant chats.
+- `audio/*.md`: transcripts from meetings, calls, voice notes, and recordings.
+
+Ignore internal files such as `checkpoints.jsonl`, `predictions.jsonl`, `metrics.jsonl`, `retriever*`, `raw_events*`, and other pipeline artifacts.
+
+`raw_events` are omitted from default discovery context. Inspect them only when detailed interaction mechanics are necessary.
+
+Do not dump whole JSONL rows from screen logs. When searching or sampling JSONL with shell tools, project only the useful fields (`timestamp`, `text`, `dense_caption`, `source.id`, `source.summary`, `source.screenshot_path`, `img_path`) instead of printing full lines.
+
+## Existing Accepted Ideas
 
 {accepted_moments}
 
@@ -34,35 +74,9 @@ Activity window starts after: **{activity_since_date}**
 
 {activity_chunk}
 
-## Task
+## Output
 
-You are the creative ideation step for one chronological activity chunk. Use this chunk to predict likely next needs and propose useful moment ideas that extend the user's work beyond what is already visible.
-
-Return idea cards only. A separate compiler step converts your ideas into draft candidates.
-
-Think in terms of future leverage. Each idea should answer:
-- What is the user likely moving toward?
-- What artifact would make that future step easier, sharper, or less likely to miss important context?
-- When exactly would the user open or use that artifact?
-- What evidence gives the executor a grounded starting point?
-- What concrete benefit would the artifact create for that future use?
-
-Favor ideas that would still be useful tomorrow: research synthesis, preparation, comparison, prioritization, design framing, experiment planning, or recurring context the user would otherwise rebuild by hand.
-
-Prefer artifacts with one main job and a visible shape: sections, comparison axes, questions to answer, recommendations to produce, or decision criteria.
-
-If several outputs serve the same future use, represent them as sections of one named artifact.
-
-Return a compact set of the strongest ideas from this chunk, usually 0-2. Quality matters more than coverage.
-
-Before adding a second idea, check that it serves a different future use, depends on a different evidence base, and produces a different artifact. If one broader artifact would serve both, return the broader idea.
-
-Use this evidence threshold:
-- One dense work signal can support a moment when it already contains enough context for a useful artifact.
-- Sparse signals become moments when multiple signals converge on the same future need.
-- Single sparse leads are useful notes; mark them `weak` until more context appears.
-
-Write evidence as short factual claims with pointers, for example `screen/filtered.jsonl:123 at 2026-05-01 10:15 shows the user comparing two papers`. Use `source_paths` for pointer-only references.
+Generate a single JSON object with ideas.
 
 For `relation_to_existing`, use:
 - `new` for a distinct new idea.
@@ -70,17 +84,15 @@ For `relation_to_existing`, use:
 - `duplicate` when it looks covered already.
 - `weak` when it is still a low-confidence lead.
 
-End with a single fenced JSON block. It must be the last thing in your final message.
-
 ```json
 {{
   "ideas": [
     {{
       "likely_next_need": "What the user will probably need next, stated as a concrete future-facing need",
-      "title": "Short useful idea title",
-      "topic_hint": "kebab-or-plain-topic",
       "artifact": "Concrete bounded artifact the executor should produce, with one main job",
       "why_useful": "Why this would save time, reduce missed information, clarify a decision, or make recurring work easier",
+      "title": "Short useful idea title",
+      "topic_hint": "kebab-or-plain-topic",
       "evidence": ["source/path:line at timestamp shows the user doing or needing X"],
       "source_paths": ["relative/source/path:line"],
       "cadence_hint": "once",

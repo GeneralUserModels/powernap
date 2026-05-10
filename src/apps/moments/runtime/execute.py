@@ -19,8 +19,6 @@ RESEARCH_MAX_ROUNDS = 90
 
 _PROMPTS = Path(__file__).resolve().parent.parent / "prompts"
 RESEARCH_INSTRUCTION_TEMPLATE = (_PROMPTS / "execute_research.txt").read_text()
-SHARED_SOURCES = (_PROMPTS / "shared" / "sources.txt").read_text()
-SHARED_EXECUTOR_CAPABILITIES = (_PROMPTS / "shared" / "executor_capabilities.txt").read_text()
 
 
 
@@ -205,8 +203,7 @@ def run(
         cadence=effective_cadence,
         schedule=effective_schedule,
         research_dir=research_dir,
-        shared_sources=SHARED_SOURCES.format(logs_dir=logs_dir),
-        shared_executor_capabilities=SHARED_EXECUTOR_CAPABILITIES,
+        logs_dir=logs_dir,
     ) + feedback_section
 
     research_agent = _build_agent_for_stage(

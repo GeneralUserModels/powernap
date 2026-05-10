@@ -25,12 +25,6 @@ from apps.moments.core.incremental import DEFAULT_MISSING_CHECKPOINT_AGE, read_c
 
 
 _PROMPTS = Path(__file__).parent / "prompts"
-SHARED_WIKI_RULES = (_PROMPTS / "shared" / "wiki.txt").read_text()
-SHARED_SOURCE_RULES = (_PROMPTS / "shared" / "sources.txt").read_text()
-INVENTORY_RULES = (_PROMPTS / "rules" / "inventory.txt").read_text()
-UPDATE_RULES = (_PROMPTS / "rules" / "update.txt").read_text()
-CREATE_RULES = (_PROMPTS / "rules" / "create.txt").read_text()
-FINALIZE_RULES = (_PROMPTS / "rules" / "finalize.txt").read_text()
 INVENTORY_TEMPLATE = (_PROMPTS / "inventory.txt").read_text()
 UPDATE_TEMPLATE = (_PROMPTS / "update.txt").read_text()
 CREATE_TEMPLATE = (_PROMPTS / "create.txt").read_text()
@@ -674,8 +668,6 @@ def _base_prompt_context(now: str, logs_dir: str, memory_dir: Path) -> dict[str,
         "now": now,
         "logs_dir": logs_dir,
         "memory_dir": str(memory_dir),
-        "shared_wiki_rules": SHARED_WIKI_RULES.format(memory_dir=str(memory_dir)),
-        "shared_source_rules": SHARED_SOURCE_RULES.format(logs_dir=logs_dir),
     }
 
 
@@ -688,8 +680,6 @@ def _inventory_prompt(now: str, logs_dir: str, memory_dir: Path, inputs: IngestI
         now=now,
         logs_dir=logs_dir,
         memory_dir=str(memory_dir),
-        shared_wiki_rules=SHARED_WIKI_RULES.format(memory_dir=str(memory_dir)),
-        inventory_rules=INVENTORY_RULES,
         mode=inputs.mode,
         last_ingest_date=last_ingest_text,
         new_inputs_list=inputs.new_inputs_list,
@@ -710,7 +700,6 @@ def _update_page_prompt(
     page_path = safe_rel_path(memory_dir, page_rel, suffix=".md")
     return UPDATE_TEMPLATE.format(
         **_base_prompt_context(now, logs_dir, memory_dir),
-        update_rules=UPDATE_RULES,
         mode=inputs.mode,
         new_inputs_list=inputs.new_inputs_list,
         existing_page_metadata=_page_metadata_list(memory_dir),
@@ -730,7 +719,6 @@ def _create_candidate_prompt(
 ) -> str:
     return CREATE_TEMPLATE.format(
         **_base_prompt_context(now, logs_dir, memory_dir),
-        create_rules=CREATE_RULES,
         mode=inputs.mode,
         new_inputs_list=inputs.new_inputs_list,
         existing_page_metadata=_page_metadata_list(memory_dir),
@@ -750,7 +738,6 @@ def _finalize_prompt(
 ) -> str:
     return FINALIZE_TEMPLATE.format(
         **_base_prompt_context(now, logs_dir, memory_dir),
-        finalize_rules=FINALIZE_RULES,
         mode=inputs.mode,
         today=datetime.now().strftime("%Y-%m-%d"),
         new_inputs_list=inputs.new_inputs_list,

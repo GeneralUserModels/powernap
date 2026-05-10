@@ -44,13 +44,7 @@ from apps.moments.schemas.structured import DraftActionPayload, IdeaPayload, Rec
 _PROMPTS = Path(__file__).resolve().parent.parent / "prompts"
 DISCOVER_TEMPLATE = (_PROMPTS / "discover.txt").read_text()
 DISCOVER_COMPILE_TEMPLATE = (_PROMPTS / "discover_compile.txt").read_text()
-DISCOVER_RULES = (_PROMPTS / "rules" / "discover.txt").read_text()
 RECONCILE_TEMPLATE = (_PROMPTS / "reconcile.txt").read_text()
-RECONCILE_RULES = (_PROMPTS / "rules" / "reconcile.txt").read_text()
-SHARED_SOURCES = (_PROMPTS / "shared" / "sources.txt").read_text()
-SHARED_MOMENTS = (_PROMPTS / "shared" / "moments.txt").read_text()
-SHARED_EXECUTOR_CAPABILITIES = (_PROMPTS / "shared" / "executor_capabilities.txt").read_text()
-SHARED_QUALITY_BAR = (_PROMPTS / "shared" / "quality_bar.txt").read_text()
 
 FILTERED_STREAM_SOURCES = [
     "screen/filtered.jsonl",
@@ -457,11 +451,6 @@ def _build_instruction(
         activity_since_date=activity_since.strftime("%Y-%m-%d %H:%M") if activity_since else "beginning",
         logs_dir=logs_dir,
         tada_dir=str(tada_dir),
-        discover_rules=DISCOVER_RULES,
-        shared_executor_capabilities=SHARED_EXECUTOR_CAPABILITIES,
-        shared_quality_bar=SHARED_QUALITY_BAR,
-        shared_sources=SHARED_SOURCES.format(logs_dir=logs_dir),
-        shared_moments=SHARED_MOMENTS.format(tada_dir=str(tada_dir)),
         accepted_moments=accepted_moments,
         feedback_state_summary=feedback_state_summary,
         chunk_metadata=chunk.metadata,
@@ -483,9 +472,6 @@ def _build_draft_action_instruction(
         now=now,
         logs_dir=logs_dir,
         tada_dir=str(tada_dir),
-        shared_moments=SHARED_MOMENTS.format(tada_dir=str(tada_dir)),
-        shared_executor_capabilities=SHARED_EXECUTOR_CAPABILITIES,
-        shared_quality_bar=SHARED_QUALITY_BAR,
         accepted_moments=accepted_moments,
         feedback_state_summary=feedback_state_summary,
         idea_json=json.dumps(ideas, indent=2, sort_keys=True),
@@ -505,9 +491,6 @@ def _build_reconcile_instruction(
         now=now,
         logs_dir=logs_dir,
         tada_dir=str(tada_dir),
-        reconcile_rules=RECONCILE_RULES,
-        shared_quality_bar=SHARED_QUALITY_BAR,
-        shared_moments=SHARED_MOMENTS.format(tada_dir=str(tada_dir)),
         accepted_moments=accepted_moments,
         feedback_state_summary=feedback_state_summary,
         draft_candidate_json=_candidate_json(draft_candidates),
