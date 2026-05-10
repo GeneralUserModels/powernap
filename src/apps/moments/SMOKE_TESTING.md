@@ -11,8 +11,7 @@ NOTE: When editing prompts, DELETING, rewording, and simplifying is often better
 A useful smoke test should answer:
 
 - Does discovery produce grounded, future-facing moments?
-- Are candidates based on the selected log evidence, not random repo context?
-- Does `evidence` include useful source pointers for the executor to follow up?
+- Are candidates based on the selected log activity, not random repo context?
 - Does promotion rank the strongest moments first?
 - Did the prompt change reduce the specific failure mode you are targeting?
 
@@ -92,8 +91,8 @@ Avoid slices that are too clean:
   source-ingestion bug.
 - Do not include only rows that mention the target topic. Include adjacent rows
   from the same day so source ranking, merging, and rejection behavior are tested.
-- Do not judge from the generated summary alone. Inspect candidate JSON, evidence,
-  and promotion ordering.
+- Do not judge from the generated summary alone. Inspect candidate JSON and
+  promotion ordering.
 
 ## Build A Temp Log Slice
 
@@ -265,7 +264,6 @@ for idx, line in enumerate(latest.read_text().splitlines(), start=1):
         "likely_next_need",
         "desired_artifact",
         "specific_instructions",
-        "evidence",
         "why_now",
         "user_value",
     ]:
@@ -294,8 +292,8 @@ prompt per discovery phase.
    - `prompts/discover.txt` for discovery behavior, source use, quality bar, examples, and candidate field discipline.
    - `prompts/reconcile.txt` for duplicate/update routing after chunk discovery.
    - `prompts/promote.txt` for ranking.
-5. Rerun the exact same temp slice and compare candidate slugs, evidence,
-   desired artifacts, and promotion order.
+5. Rerun the exact same temp slice and compare candidate slugs, desired
+   artifacts, and promotion order.
 6. Record the attempt in an iteration log with the command, slice definition,
    generated candidates, and judgment.
 
@@ -332,7 +330,6 @@ the actual discovered moments, then keep only the smallest durable improvement.
    candidate, inspect:
    - `title`, `likely_next_need`, and `desired_artifact`;
    - `specific_instructions` for unsupported facts or over-broad scope;
-   - `evidence` for useful follow-up pointers;
    - `why_now` for causal overreach;
    - promotion rank and reason.
 6. Pick winners by behavior, not by rule count. If a combined variant becomes
@@ -351,9 +348,9 @@ Good generic variants to try:
   as one idea and mark the others weak or separate.
 - **Specific fact discipline**: Only name a venue, deadline, collaborator,
   organization, meeting purpose, or requested deliverable when that exact fact
-  appears in the cited activity evidence. If evidence suggests only a general
-  upcoming use, keep the candidate generic and phrase unknown specifics as
-  verification work for the executor, not as facts.
+  appears in the selected activity. If activity suggests only a general upcoming
+  use, keep the candidate generic and phrase unknown specifics as verification
+  work for the executor, not as facts.
 - **Commitment tie-breaker**: Scan sparse and non-screen sources for explicit
   meetings, deadlines, due dates, promised follow-ups, scheduled events, or
   requests from other people. Test this carefully: it can improve meeting/deadline
@@ -417,14 +414,12 @@ Strong candidates usually have:
 
 - a concrete future need;
 - a concrete artifact the executor can produce;
-- evidence entries that point back to activity sources;
 - enough specificity for execution without hardcoding a brittle implementation;
 - a clear reason this helps before the user asks.
 
 Reject or revise candidates that:
 
 - summarize what the user already did without adding next-step value;
-- cite unrelated code or files as evidence;
 - propose work another assistant just completed;
 - are generic productivity advice;
 - require unavailable private data without a plausible source;

@@ -51,9 +51,9 @@ Focus on the "Specific Instructions for Agent" section below. Treat other sectio
 
 Create `{research_dir}` and write focused markdown files inside it that complete the user's task. 
 
-Start with a focused index.md that DIRECTLY solves the user's need.
+Include an `index.md` page. Start with a focused index.md that DIRECTLY solves the user's need.
 
-You decide the file names, count, and organization based on the task and what you discover.
+Decide the file names, count, and organization based on the task and what you discover.
 
 Use markdown structure deliberately. Prefer tables for comparisons, rankings, inventories, schedules, rubrics, matrices, scorecards, and source/evidence logs. 
 
@@ -61,7 +61,11 @@ Use markdown links liberally for source references and external content.
 
 When a claim, source, tool, document, company, paper, issue, or web page is useful to revisit, link it directly using descriptive link text.
 
+Do not build a website or app. Produce markdown pages only.
+
 Your work is incomplete until the markdown files exist on disk. Before finishing, you must:
 - create `{research_dir}`;
 - use the `write_file` tool to write multiple substantive `.md` files under `{research_dir}`;
 - verify the files exist and are non-empty.
+
+Do not stop after planning, searching, or summarizing in chat. Do not say the work is complete until the files are written and verified.

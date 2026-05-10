@@ -196,7 +196,6 @@ def _candidate_search_text(candidate: MomentCandidate) -> str:
             candidate.specific_instructions,
             candidate.desired_artifact,
             candidate.likely_next_need,
-            " ".join(candidate.evidence),
             candidate.why_now,
             candidate.user_value,
         ]
@@ -215,7 +214,7 @@ def _draft_context_for_text(drafts: dict[str, MomentCandidate], text: str) -> st
         line = (
             f"- `{candidate.id}` / `{candidate.slug}` [{candidate.topic}, {candidate.cadence}] "
             f"{candidate.title}: {candidate.description} "
-            f"(evidence={len(candidate.evidence)}, usefulness={candidate.usefulness}, confidence={candidate.confidence:.2f})"
+            f"(usefulness={candidate.usefulness}, confidence={candidate.confidence:.2f})"
         )
         if used_chars + len(line) + 1 > DRAFT_CATALOG_MAX_CHARS:
             omitted += 1

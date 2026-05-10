@@ -24,7 +24,6 @@ class CandidatePayload(StrictModel):
     usefulness: int
     specific_instructions: str
     desired_artifact: str
-    evidence: list[str] = []
     likely_next_need: str
     why_now: str
     user_value: str

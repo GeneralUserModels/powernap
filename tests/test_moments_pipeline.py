@@ -48,7 +48,6 @@ def _candidate(**overrides):
         "usefulness": 8,
         "specific_instructions": "Find new papers and summarize why they matter.",
         "desired_artifact": "A ranked feed of papers.",
-        "evidence": ["memory/index.md mentions research"],
         "likely_next_need": "The user will need to keep up with new research without manually scanning sources.",
         "why_now": "The user is actively researching.",
         "user_value": "Saves triage time.",
@@ -547,7 +546,7 @@ class MomentsPipelineTests(unittest.TestCase):
                         slug="paper-digest",
                         topic="wrong-topic",
                         title="Updated Paper Digest",
-                        evidence=["new evidence"],
+                        specific_instructions="Use the new research signal to refresh the digest.",
                     )
                 )
             ])
@@ -559,7 +558,7 @@ class MomentsPipelineTests(unittest.TestCase):
             accepted = accepted_dir / "paper-digest.md"
             accepted_text = accepted.read_text()
             self.assertIn("Updated Paper Digest", accepted_text)
-            self.assertIn("new evidence", accepted_text)
+            self.assertIn("Use the new research signal", accepted_text)
             self.assertFalse((tada / "wrong-topic" / "paper-digest.md").exists())
             self.assertIn('"topic": "research"', structured.instructions[0])
             self.assertNotIn('"topic": "wrong-topic"', structured.instructions[0])
@@ -717,8 +716,8 @@ class MomentsPipelineTests(unittest.TestCase):
                 ),
                 text="time: 2025-01-01 10:05:00\nsource: screen\ntext: organizing papers",
             )
-            first = _candidate(title="Paper Digest", evidence=["first chunk"])
-            second = _candidate(title="Paper Digest", evidence=["first chunk", "second chunk"])
+            first = _candidate(title="Paper Digest", specific_instructions="Use first chunk.")
+            second = _candidate(title="Paper Digest", specific_instructions="Use first chunk and second chunk.")
             structured = _FakeStructuredCompletion(
                 "```json\n" + json.dumps({"candidates": [second], "updates": [], "rejected": [], "notes": "kept final draft"}) + "\n```",
             )
@@ -766,8 +765,8 @@ class MomentsPipelineTests(unittest.TestCase):
                 "---\n\nExisting body\n"
             )
             (tada / "results" / "paper-digest").mkdir(parents=True)
-            draft = _candidate(id="new-paper-tracker", slug="new-paper-tracker", evidence=["new evidence"])
-            update = _candidate(id="paper-digest", slug="paper-digest", evidence=["new evidence"])
+            draft = _candidate(id="new-paper-tracker", slug="new-paper-tracker", specific_instructions="Use new research signal.")
+            update = _candidate(id="paper-digest", slug="paper-digest", specific_instructions="Use new research signal.")
             structured = _FakeStructuredCompletion(
                 "```json\n"
                 + json.dumps({
