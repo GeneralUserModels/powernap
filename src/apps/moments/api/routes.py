@@ -29,6 +29,7 @@ from chat import ChatAgent, ChatSession
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/moments", tags=["moments"])
+OUTPUT_SUBDIR = "output"
 
 
 class MomentStateUpdate(BaseModel):
@@ -63,16 +64,20 @@ def _extract_markdown_title(path: Path) -> str:
     return path.stem.replace("-", " ").title()
 
 
-def _list_research_pages(result_dir: Path) -> list[Path]:
-    research_dir = result_dir / "research"
-    if not research_dir.is_dir():
+def _output_pages_dir(result_dir: Path) -> Path:
+    return result_dir / OUTPUT_SUBDIR
+
+
+def _list_output_pages(result_dir: Path) -> list[Path]:
+    output_pages_dir = _output_pages_dir(result_dir)
+    if not output_pages_dir.is_dir():
         return []
-    base = research_dir.resolve()
+    base = output_pages_dir.resolve()
     pages: list[Path] = []
-    for path in research_dir.rglob("*.md"):
+    for path in output_pages_dir.rglob("*.md"):
         if not path.is_file():
             continue
-        rel = path.relative_to(research_dir)
+        rel = path.relative_to(output_pages_dir)
         if any(part.startswith(".") for part in rel.parts):
             continue
         try:
@@ -82,7 +87,7 @@ def _list_research_pages(result_dir: Path) -> list[Path]:
         pages.append(path)
 
     def sort_key(path: Path) -> tuple[int, str, str]:
-        rel = path.relative_to(research_dir).as_posix()
+        rel = path.relative_to(output_pages_dir).as_posix()
         name = path.name.lower()
         priority = 0 if name == "index.md" else 1 if name == "overview.md" else 2
         return (priority, _extract_markdown_title(path).lower(), rel.lower())
@@ -90,22 +95,22 @@ def _list_research_pages(result_dir: Path) -> list[Path]:
     return sorted(pages, key=sort_key)
 
 
-def _page_meta(path: Path, research_dir: Path) -> dict:
+def _page_meta(path: Path, output_pages_dir: Path) -> dict:
     stat = path.stat()
     return {
-        "path": path.relative_to(research_dir).as_posix(),
+        "path": path.relative_to(output_pages_dir).as_posix(),
         "title": _extract_markdown_title(path),
         "bytes": stat.st_size,
         "updated_at": datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat(),
     }
 
 
-def _resolve_research_page(tada_dir: Path, slug: str, page_path: str) -> Path | None:
-    research_dir = tada_dir / "results" / slug / "research"
-    if not research_dir.is_dir():
+def _resolve_output_page(tada_dir: Path, slug: str, page_path: str) -> Path | None:
+    output_pages_dir = _output_pages_dir(tada_dir / "results" / slug)
+    if not output_pages_dir.is_dir():
         return None
-    base = research_dir.resolve()
-    target = (research_dir / page_path).resolve()
+    base = output_pages_dir.resolve()
+    target = (output_pages_dir / page_path).resolve()
     try:
         target.relative_to(base)
     except ValueError:
@@ -161,7 +166,7 @@ async def list_results(request: Request, include_dismissed: bool = False):
     results = []
     for meta_path in results_dir.glob("*/meta.json"):
         result_dir = meta_path.parent
-        page_paths = _list_research_pages(result_dir)
+        page_paths = _list_output_pages(result_dir)
         if not page_paths:
             continue
         meta = json.loads(meta_path.read_text())
@@ -217,17 +222,17 @@ async def list_results(request: Request, include_dismissed: bool = False):
 async def list_result_pages(slug: str, request: Request):
     """List markdown pages for a completed moment result."""
     result_dir = _get_tada_dir(request) / "results" / slug
-    pages = _list_research_pages(result_dir)
+    pages = _list_output_pages(result_dir)
     if not pages:
         return JSONResponse({"error": "not found"}, status_code=404)
-    research_dir = result_dir / "research"
-    return [_page_meta(path, research_dir) for path in pages]
+    output_pages_dir = _output_pages_dir(result_dir)
+    return [_page_meta(path, output_pages_dir) for path in pages]
 
 
 @router.get("/results/{slug}/pages/{page_path:path}")
 async def get_result_page(slug: str, page_path: str, request: Request):
     """Serve a raw markdown page for a completed moment result."""
-    path = _resolve_research_page(_get_tada_dir(request), slug, page_path)
+    path = _resolve_output_page(_get_tada_dir(request), slug, page_path)
     if path is None:
         return JSONResponse({"error": "not found"}, status_code=404)
     return PlainTextResponse(path.read_text(errors="replace"), media_type="text/markdown")
@@ -421,13 +426,13 @@ def _read_moment_files(result_dir: Path) -> str:
     if meta_path.exists():
         content = meta_path.read_text(errors="replace")
         parts.append(f"### meta.json\n```json\n{content}\n```")
-    research_dir = result_dir / "research"
-    for path in _list_research_pages(result_dir):
+    output_pages_dir = _output_pages_dir(result_dir)
+    for path in _list_output_pages(result_dir):
         content = path.read_text(errors="replace")
         if len(content) > 10000:
             content = content[:10000] + "\n... (truncated)"
-        rel = path.relative_to(research_dir).as_posix()
-        parts.append(f"### research/{rel}\n```markdown\n{content}\n```")
+        rel = path.relative_to(output_pages_dir).as_posix()
+        parts.append(f"### {output_pages_dir.name}/{rel}\n```markdown\n{content}\n```")
     return "\n\n".join(parts)
 
 
@@ -467,7 +472,7 @@ async def start_feedback(slug: str, body: FeedbackMessageBody, request: Request)
     tada_dir = _get_tada_dir(request)
     result_dir = tada_dir / "results" / slug
 
-    if not _list_research_pages(result_dir):
+    if not _list_output_pages(result_dir):
         return JSONResponse({"error": "Moment not found"}, status_code=404)
 
     # If a session for this slug is already in memory (e.g. the user closed the

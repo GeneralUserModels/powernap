@@ -11,8 +11,7 @@ NOTE: When editing prompts, DELETING, rewording, and simplifying is often better
 A useful smoke test should answer:
 
 - Does discovery produce grounded, future-facing moments?
-- Are candidates based on the selected log evidence, not random repo context?
-- Are source paths useful enough for the executor to follow up?
+- Are candidates based on the selected log activity, not random repo context?
 - Does promotion rank the strongest moments first?
 - Did the prompt change reduce the specific failure mode you are targeting?
 
@@ -92,8 +91,8 @@ Avoid slices that are too clean:
   source-ingestion bug.
 - Do not include only rows that mention the target topic. Include adjacent rows
   from the same day so source ranking, merging, and rejection behavior are tested.
-- Do not judge from the generated summary alone. Inspect candidate JSON, evidence,
-  source paths, and promotion ordering.
+- Do not judge from the generated summary alone. Inspect candidate JSON and
+  promotion ordering.
 
 ## Build A Temp Log Slice
 
@@ -200,6 +199,48 @@ print(promote.run(logs, model=model, api_key=api_key, n=8))
 PY
 ```
 
+## Run Discovery Only
+
+Use this when testing the discovery prompt before tuning promotion. It writes
+candidate JSONL files but does not accept moments or create promoted markdown.
+
+```bash
+.venv/bin/python - <<'PY'
+import json
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path("src").resolve()))
+
+from apps.moments.steps import discover
+
+cfg = json.loads(Path("tada-config.json").read_text())
+model = cfg.get("moments_agent_model") or "gemini/gemini-3-flash-preview"
+api_key = cfg.get("moments_agent_api_key") or cfg.get("default_llm_api_key") or None
+logs = "/tmp/powernap-moments-smoke/logs"
+
+print("running discover only", model)
+print(discover.run(logs, model=model, api_key=api_key))
+PY
+```
+
+For this pass, judge only the latest
+`logs-tada/_discovery/candidates/*.jsonl`. Good discovery candidates should be
+forward-looking and non-repetitive. They should create new leverage such as:
+
+- a meeting brief before the user meets a new person, with recent work, shared
+  context, likely agenda, and specific questions;
+- a current comparison of products, providers, models, APIs, or tools the user
+  appears to be choosing between, with decision criteria and a recommendation;
+- a brainstorm document for research directions, experiments, paper trails, or
+  project ideas that extends beyond what the user already wrote;
+- a planning brief for an upcoming draft, grant, talk, demo, review, or
+  milestone, with prior examples, constraints, and open decisions.
+
+Reject candidates that merely summarize past activity, rebuild an artifact the
+user already made, or turn old recurring work into another copy of the same
+moment.
+
 ## Inspect Candidates
 
 Read the latest candidate JSONL before judging the prompt.
@@ -223,8 +264,6 @@ for idx, line in enumerate(latest.read_text().splitlines(), start=1):
         "likely_next_need",
         "desired_artifact",
         "specific_instructions",
-        "evidence",
-        "source_paths",
         "why_now",
         "user_value",
     ]:
@@ -243,19 +282,18 @@ find /tmp/powernap-moments-smoke/logs-tada -maxdepth 3 -type f \
 
 ## Prompt Iteration Loop
 
-Use this loop for prompt work. In most cases, you may need to only really focus on discover.txt
+Use this loop for prompt work. Discovery is now flattened into one editable
+prompt per discovery phase.
 
 1. Create a temp log slice that contains both positive and negative examples.
 2. Run discovery and promotion end to end.
 3. Inspect the candidate JSON, not just the summary.
 4. Edit the smallest relevant prompt:
-   - `prompts/rules/discover.txt` for discovery behavior and rejection rules.
-   - `prompts/shared/quality_bar.txt` for broad quality thresholds.
-   - `prompts/discover.txt` for ideation task framing.
-   - `prompts/discover_compile.txt` for candidate field discipline.
-   - `prompts/promote.txt` or `prompts/rules/promote.txt` for ranking.
-5. Rerun the exact same temp slice and compare candidate slugs, evidence,
-   desired artifacts, and promotion order.
+   - `prompts/discover.txt` for discovery behavior, source use, quality bar, examples, and candidate field discipline.
+   - `prompts/reconcile.txt` for duplicate/update routing after chunk discovery.
+   - `prompts/promote.txt` for ranking.
+5. Rerun the exact same temp slice and compare candidate slugs, desired
+   artifacts, and promotion order.
 6. Record the attempt in an iteration log with the command, slice definition,
    generated candidates, and judgment.
 
@@ -292,7 +330,6 @@ the actual discovered moments, then keep only the smallest durable improvement.
    candidate, inspect:
    - `title`, `likely_next_need`, and `desired_artifact`;
    - `specific_instructions` for unsupported facts or over-broad scope;
-   - `evidence` and `source_paths` for useful follow-up pointers;
    - `why_now` for causal overreach;
    - promotion rank and reason.
 6. Pick winners by behavior, not by rule count. If a combined variant becomes
@@ -311,9 +348,9 @@ Good generic variants to try:
   as one idea and mark the others weak or separate.
 - **Specific fact discipline**: Only name a venue, deadline, collaborator,
   organization, meeting purpose, or requested deliverable when that exact fact
-  appears in the cited activity evidence. If evidence suggests only a general
-  upcoming use, keep the candidate generic and phrase unknown specifics as
-  verification work for the executor, not as facts.
+  appears in the selected activity. If activity suggests only a general upcoming
+  use, keep the candidate generic and phrase unknown specifics as verification
+  work for the executor, not as facts.
 - **Commitment tie-breaker**: Scan sparse and non-screen sources for explicit
   meetings, deadlines, due dates, promised follow-ups, scheduled events, or
   requests from other people. Test this carefully: it can improve meeting/deadline
@@ -327,7 +364,7 @@ BASE_SLICE=/tmp/powernap-moments-smoke
 
 # For each variant, create:
 # $ROUND_ROOT/variants/<name>/overrides.json
-# with keys like DISCOVER_RULES, DISCOVER_TEMPLATE, or DISCOVER_COMPILE_TEMPLATE.
+# with keys like DISCOVER_TEMPLATE or RECONCILE_TEMPLATE.
 
 VARIANT_NAME=shared_use ROUND_ROOT="$ROUND_ROOT" BASE_SLICE="$BASE_SLICE" \
 .venv/bin/python - <<'PY'
@@ -377,14 +414,12 @@ Strong candidates usually have:
 
 - a concrete future need;
 - a concrete artifact the executor can produce;
-- source paths that point back to activity evidence;
 - enough specificity for execution without hardcoding a brittle implementation;
 - a clear reason this helps before the user asks.
 
 Reject or revise candidates that:
 
 - summarize what the user already did without adding next-step value;
-- cite unrelated code or files as evidence;
 - propose work another assistant just completed;
 - are generic productivity advice;
 - require unavailable private data without a plausible source;

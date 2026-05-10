@@ -31,7 +31,7 @@ from apps.moments.core.candidates import (
 from apps.moments.api import routes as moments_routes
 from apps.moments.runtime import execute
 from apps.moments.runtime.scheduler import load_run_history, scheduled_service_due, should_run
-from apps.moments.schemas.structured import DraftActionPayload
+from apps.moments.schemas.structured import DiscoveryPayload
 
 
 def _candidate(**overrides):
@@ -48,27 +48,9 @@ def _candidate(**overrides):
         "usefulness": 8,
         "specific_instructions": "Find new papers and summarize why they matter.",
         "desired_artifact": "A ranked feed of papers.",
-        "evidence": ["memory/index.md mentions research"],
-        "source_paths": ["memory/index.md"],
         "likely_next_need": "The user will need to keep up with new research without manually scanning sources.",
         "why_now": "The user is actively researching.",
         "user_value": "Saves triage time.",
-    }
-    base.update(overrides)
-    return base
-
-
-def _idea(**overrides):
-    base = {
-        "likely_next_need": "The user will need to keep up with new research without manually scanning sources.",
-        "title": "Paper Digest",
-        "topic_hint": "research",
-        "artifact": "A ranked feed of papers.",
-        "why_useful": "Saves triage time.",
-        "evidence": ["memory/index.md mentions research"],
-        "source_paths": ["memory/index.md"],
-        "cadence_hint": "scheduled",
-        "relation_to_existing": "new",
     }
     base.update(overrides)
     return base
@@ -102,7 +84,7 @@ class _FakeStructuredCompletion:
 
 class _FakeToolAgent:
     def __init__(self, *results: str):
-        self.results = list(results) or ["```json\n" + json.dumps({"ideas": [_idea()], "notes": ""}) + "\n```"]
+        self.results = list(results) or ["```json\n" + json.dumps({"tasks": [_candidate()]}) + "\n```"]
         self.max_rounds = None
         self.on_round = None
         self.messages: list[list[dict]] = []
@@ -126,14 +108,14 @@ class _FakeExecuteAgent:
     def run(self, messages, **kwargs):
         self.messages.append(messages)
         prompt = messages[0]["content"]
-        self.test_case.assertIn("/research", prompt)
+        self.test_case.assertIn("/output", prompt)
         self.test_case.assertIn("Include an `index.md` page", prompt)
         self.test_case.assertIn("Use markdown links liberally", prompt)
         self.test_case.assertIn("Do not build a website or app", prompt)
-        research_dir = self.output_dir / "research"
-        research_dir.mkdir(parents=True)
-        (research_dir / "evidence.md").write_text("# Evidence\n\nA cited [source](https://example.com).\n")
-        (research_dir / "synthesis.md").write_text("# Synthesis\n\nUseful researched findings.\n")
+        output_pages_dir = self.output_dir / "output"
+        output_pages_dir.mkdir(parents=True)
+        (output_pages_dir / "evidence.md").write_text("# Evidence\n\nA cited [source](https://example.com).\n")
+        (output_pages_dir / "synthesis.md").write_text("# Synthesis\n\nUseful researched findings.\n")
         return "research complete"
 
 
@@ -189,21 +171,11 @@ class MomentsPipelineTests(unittest.TestCase):
 
     def test_structured_candidate_payload_requires_cadence_fields(self):
         with self.assertRaises(ValidationError):
-            DraftActionPayload.model_validate({
-                "upserts": [_candidate(cadence="scheduled", schedule="")],
-                "rejected": [],
-                "remove": [],
-                "notes": "",
-            })
+            DiscoveryPayload.model_validate({"tasks": [_candidate(cadence="scheduled", schedule="")]})
         with self.assertRaises(ValidationError):
             raw = _candidate(cadence="scheduled")
             raw.pop("schedule")
-            DraftActionPayload.model_validate({
-                "upserts": [raw],
-                "rejected": [],
-                "remove": [],
-                "notes": "",
-            })
+            DiscoveryPayload.model_validate({"tasks": [raw]})
 
     def test_markdown_render_uses_cadence_frontmatter(self):
         candidate = validate_candidate(_candidate(cadence="scheduled", schedule="Monday at 9am"))
@@ -241,32 +213,32 @@ class MomentsPipelineTests(unittest.TestCase):
 
             self.assertEqual(load_run_history(results), {"broken-once": 120.0})
 
-    def test_research_pages_are_ordered_and_titled(self):
+    def test_output_pages_are_ordered_and_titled(self):
         with tempfile.TemporaryDirectory() as d:
             result_dir = Path(d)
-            research = result_dir / "research"
-            research.mkdir()
-            (research / "z-notes.md").write_text("# Zebra Notes\n\nBody\n")
-            (research / "overview.md").write_text("---\ntitle: Brief Overview\n---\n\nBody\n")
-            (research / "index.md").write_text("# Start Here\n\nBody\n")
+            output_pages = result_dir / "output"
+            output_pages.mkdir()
+            (output_pages / "z-notes.md").write_text("# Zebra Notes\n\nBody\n")
+            (output_pages / "overview.md").write_text("---\ntitle: Brief Overview\n---\n\nBody\n")
+            (output_pages / "index.md").write_text("# Start Here\n\nBody\n")
 
-            pages = moments_routes._list_research_pages(result_dir)
+            pages = moments_routes._list_output_pages(result_dir)
 
             self.assertEqual([p.name for p in pages], ["index.md", "overview.md", "z-notes.md"])
-            self.assertEqual(moments_routes._page_meta(pages[1], research)["title"], "Brief Overview")
+            self.assertEqual(moments_routes._page_meta(pages[1], output_pages)["title"], "Brief Overview")
 
-    def test_resolve_research_page_rejects_traversal(self):
+    def test_resolve_output_page_rejects_traversal(self):
         with tempfile.TemporaryDirectory() as d:
             tada = Path(d) / "logs-tada"
-            research = tada / "results" / "brief" / "research"
-            research.mkdir(parents=True)
-            safe = research / "safe.md"
+            output_pages = tada / "results" / "brief" / "output"
+            output_pages.mkdir(parents=True)
+            safe = output_pages / "safe.md"
             safe.write_text("# Safe\n")
             (tada / "results" / "brief" / "outside.md").write_text("# Outside\n")
 
-            self.assertEqual(moments_routes._resolve_research_page(tada, "brief", "safe.md"), safe.resolve())
-            self.assertIsNone(moments_routes._resolve_research_page(tada, "brief", "../outside.md"))
-            self.assertIsNone(moments_routes._resolve_research_page(tada, "brief", "/etc/passwd"))
+            self.assertEqual(moments_routes._resolve_output_page(tada, "brief", "safe.md"), safe.resolve())
+            self.assertIsNone(moments_routes._resolve_output_page(tada, "brief", "../outside.md"))
+            self.assertIsNone(moments_routes._resolve_output_page(tada, "brief", "/etc/passwd"))
 
     def test_list_results_includes_markdown_backed_results(self):
         with tempfile.TemporaryDirectory() as d:
@@ -284,10 +256,10 @@ class MomentsPipelineTests(unittest.TestCase):
                 "---\n\nBody\n"
             )
             result_dir = tada / "results" / "strategy-brief"
-            research = result_dir / "research"
-            research.mkdir(parents=True)
-            (research / "evidence.md").write_text("# Evidence\n")
-            (research / "synthesis.md").write_text("# Synthesis\n")
+            output_pages = result_dir / "output"
+            output_pages.mkdir(parents=True)
+            (output_pages / "evidence.md").write_text("# Evidence\n")
+            (output_pages / "synthesis.md").write_text("# Synthesis\n")
             (result_dir / "meta.json").write_text(json.dumps({
                 "title": "Strategy Brief",
                 "description": "Markdown result.",
@@ -343,8 +315,8 @@ class MomentsPipelineTests(unittest.TestCase):
                 success = execute.run(str(task_path), str(output_dir), str(logs), model="fake")
 
             self.assertTrue(success)
-            self.assertGreaterEqual(len(list((output_dir / "research").glob("*.md"))), 2)
-            index = output_dir / "research" / "index.md"
+            self.assertGreaterEqual(len(list((output_dir / "output").glob("*.md"))), 2)
+            index = output_dir / "output" / "index.md"
             self.assertTrue(index.exists())
             self.assertIn("[Evidence](evidence.md)", index.read_text())
             self.assertTrue((output_dir / "meta.json").exists())
@@ -383,7 +355,7 @@ class MomentsPipelineTests(unittest.TestCase):
             self.assertFalse(success)
             self.assertFalse(output_dir.exists())
             self.assertEqual(len(research_agent.messages), 2)
-            self.assertIn("research folder is not ready", research_agent.messages[1][0]["content"])
+            self.assertIn("output folder is not ready", research_agent.messages[1][0]["content"])
 
     def test_discover_and_promote_with_fake_agents(self):
         with tempfile.TemporaryDirectory() as d:
@@ -396,13 +368,13 @@ class MomentsPipelineTests(unittest.TestCase):
             (screen / "filtered.jsonl").write_text(
                 _filtered_row(recent, "screen", "reading papers") + "\n"
             )
-            draft_state_json = "```json\n" + json.dumps({"upserts": [_candidate()], "rejected": [], "remove": [], "notes": ""}) + "\n```"
+            draft_state_json = "```json\n" + json.dumps({"tasks": [_candidate()]}) + "\n```"
             reconcile_json = "```json\n" + json.dumps({"candidates": [_candidate()], "updates": [], "rejected": [], "notes": ""}) + "\n```"
             promotion_json = '```json\n{"ranked":[{"id":"paper-digest","score":9,"reason":"useful"}],"rejected":[]}\n```'
-            discover_structured = _FakeStructuredCompletion(draft_state_json, reconcile_json)
+            discover_structured = _FakeStructuredCompletion(reconcile_json)
             promote_structured = _FakeStructuredCompletion(promotion_json)
 
-            fake_agent = _FakeToolAgent()
+            fake_agent = _FakeToolAgent(draft_state_json)
             with patch.object(discover, "build_agent", return_value=(fake_agent, None)), \
                  patch.object(discover, "structured_completion", side_effect=discover_structured):
                 discover.run(str(logs), model="fake")
@@ -410,8 +382,11 @@ class MomentsPipelineTests(unittest.TestCase):
             self.assertIn("screen/filtered.jsonl", discover_prompt)
             self.assertIn("reading papers", discover_prompt)
             self.assertIn("(no drafts yet)", discover_prompt)
-            self.assertIn("Idea Cards From This Chunk", discover_structured.instructions[0])
-            self.assertIn("Draft Candidates From Discovery", discover_structured.instructions[1])
+            self.assertIn('"tasks"', discover_prompt)
+            self.assertIn("Do not treat a visible button", discover_prompt)
+            self.assertIn("require explicit confirmation", discover_prompt)
+            self.assertIn("Draft Candidates From Discovery", discover_structured.instructions[0])
+            self.assertIn("completed irreversible actions", discover_structured.instructions[0])
             candidate_files = _candidate_files(root)
             self.assertEqual(len(candidate_files), 1)
             self.assertTrue((_discovery_state(root) / ".last_discovery").exists())
@@ -435,7 +410,7 @@ class MomentsPipelineTests(unittest.TestCase):
                 _filtered_row(recent, "screen", "reading papers") + "\n"
             )
             structured = _FakeStructuredCompletion("not json")
-            with patch.object(discover, "build_agent", return_value=(_FakeToolAgent("not json"), None)), \
+            with patch.object(discover, "build_agent", return_value=(_FakeToolAgent("not json", "not json"), None)), \
                  patch.object(discover, "structured_completion", side_effect=structured):
                 with self.assertRaises(CandidateError):
                     discover.run(str(logs), model="fake")
@@ -454,10 +429,9 @@ class MomentsPipelineTests(unittest.TestCase):
                 + _filtered_row(recent, "screen", "recent topic") + "\n"
             )
             structured = _FakeStructuredCompletion(
-                "```json\n" + json.dumps({"upserts": [_candidate()], "rejected": [], "remove": [], "notes": ""}) + "\n```",
                 "```json\n" + json.dumps({"candidates": [_candidate()], "updates": [], "rejected": [], "notes": ""}) + "\n```",
             )
-            fake_agent = _FakeToolAgent()
+            fake_agent = _FakeToolAgent("```json\n" + json.dumps({"tasks": [_candidate()]}) + "\n```")
 
             with patch.object(discover, "build_agent", return_value=(fake_agent, None)), \
                  patch.object(discover, "structured_completion", side_effect=structured):
@@ -479,12 +453,13 @@ class MomentsPipelineTests(unittest.TestCase):
                 _filtered_row(recent, "screen", "reading papers") + "\n"
             )
             structured = _FakeStructuredCompletion(
-                StructuredOpsError("structured output validation failed"),
-                "```json\n" + json.dumps({"upserts": [_candidate()], "rejected": [], "remove": [], "notes": ""}) + "\n```",
                 "```json\n" + json.dumps({"candidates": [_candidate()], "updates": [], "rejected": [], "notes": ""}) + "\n```",
             )
 
-            with patch.object(discover, "build_agent", return_value=(_FakeToolAgent(), None)), \
+            with patch.object(discover, "build_agent", return_value=(_FakeToolAgent(
+                "not json",
+                "```json\n" + json.dumps({"tasks": [_candidate()]}) + "\n```",
+            ), None)), \
                  patch.object(discover, "structured_completion", side_effect=structured):
                 discover.run(str(logs), model="fake")
 
@@ -492,7 +467,7 @@ class MomentsPipelineTests(unittest.TestCase):
             candidate_files = _candidate_files(Path(d))
             self.assertEqual(len(candidate_files), 1)
 
-    def test_discovery_reports_draft_compile_rejections(self):
+    def test_discovery_accepts_empty_tasks(self):
         with tempfile.TemporaryDirectory() as d:
             logs = Path(d) / "logs"
             screen = logs / "screen"
@@ -501,26 +476,20 @@ class MomentsPipelineTests(unittest.TestCase):
             (screen / "filtered.jsonl").write_text(
                 _filtered_row(recent, "screen", "reading papers") + "\n"
             )
-            structured = _FakeStructuredCompletion(
+            discovery_json = (
                 "```json\n"
-                + json.dumps({
-                    "upserts": [],
-                    "rejected": [{"id": "paper-digest", "reason": "too weak"}],
-                    "remove": [],
-                    "notes": "dropped weak idea",
-                })
-                + "\n```",
+                + json.dumps({"tasks": []})
+                + "\n```"
             )
 
-            with patch.object(discover, "build_agent", return_value=(_FakeToolAgent(), None)), \
-                 patch.object(discover, "structured_completion", side_effect=structured):
+            with patch.object(discover, "build_agent", return_value=(_FakeToolAgent(discovery_json), None)):
                 result = discover.run(str(logs), model="fake")
 
-            self.assertIn("Rejected or merged 1 drafts", result)
+            self.assertIn("Reconciled 0 discovered tasks to 0 candidates.", result)
             self.assertTrue((_discovery_state(Path(d)) / ".last_discovery").exists())
 
-    def test_structured_completion_accepts_provider_rejected_but_valid_pydantic_json(self):
-        raw = json.dumps({"upserts": [_candidate()], "notes": ""})
+    def test_structured_completion_accepts_provider_rejected_but_valid_discovery_json(self):
+        raw = json.dumps({"tasks": [_candidate()]})
 
         class _FakeSchemaError(Exception):
             raw_response = raw
@@ -530,12 +499,11 @@ class MomentsPipelineTests(unittest.TestCase):
             text, payload = structured_completion_module.structured_completion(
                 model="fake",
                 instruction="instruction",
-                response_model=DraftActionPayload,
+                response_model=DiscoveryPayload,
             )
 
-        self.assertEqual(text, raw)
-        self.assertEqual(payload.upserts[0].slug, "paper-digest")
-        self.assertEqual(payload.rejected, [])
+            self.assertEqual(text, raw)
+            self.assertEqual(payload.tasks[0].slug, "paper-digest")
 
     def test_promotion_retries_malformed_json_once(self):
         with tempfile.TemporaryDirectory() as d:
@@ -581,7 +549,7 @@ class MomentsPipelineTests(unittest.TestCase):
                         slug="paper-digest",
                         topic="wrong-topic",
                         title="Updated Paper Digest",
-                        evidence=["new evidence"],
+                        specific_instructions="Use the new research signal to refresh the digest.",
                     )
                 )
             ])
@@ -593,7 +561,7 @@ class MomentsPipelineTests(unittest.TestCase):
             accepted = accepted_dir / "paper-digest.md"
             accepted_text = accepted.read_text()
             self.assertIn("Updated Paper Digest", accepted_text)
-            self.assertIn("new evidence", accepted_text)
+            self.assertIn("Use the new research signal", accepted_text)
             self.assertFalse((tada / "wrong-topic" / "paper-digest.md").exists())
             self.assertIn('"topic": "research"', structured.instructions[0])
             self.assertNotIn('"topic": "wrong-topic"', structured.instructions[0])
@@ -751,16 +719,14 @@ class MomentsPipelineTests(unittest.TestCase):
                 ),
                 text="time: 2025-01-01 10:05:00\nsource: screen\ntext: organizing papers",
             )
-            first = _candidate(title="Paper Digest", evidence=["first chunk"])
-            second = _candidate(title="Paper Digest", evidence=["first chunk", "second chunk"])
+            first = _candidate(title="Paper Digest", specific_instructions="Use first chunk.")
+            second = _candidate(title="Paper Digest", specific_instructions="Use first chunk and second chunk.")
             structured = _FakeStructuredCompletion(
-                "```json\n" + json.dumps({"upserts": [first], "rejected": [], "remove": [], "notes": ""}) + "\n```",
-                "```json\n" + json.dumps({"upserts": [second], "rejected": [], "remove": [], "notes": ""}) + "\n```",
                 "```json\n" + json.dumps({"candidates": [second], "updates": [], "rejected": [], "notes": "kept final draft"}) + "\n```",
             )
             fake_agent = _FakeToolAgent(
-                "```json\n" + json.dumps({"ideas": [_idea(evidence=["first chunk"])], "notes": ""}) + "\n```",
-                "```json\n" + json.dumps({"ideas": [_idea(evidence=["second chunk"], relation_to_existing="possible_update")], "notes": ""}) + "\n```",
+                "```json\n" + json.dumps({"tasks": [first]}) + "\n```",
+                "```json\n" + json.dumps({"tasks": [second]}) + "\n```",
             )
             chunks = [discover.ActivityChunk(index=1, rows=[row1]), discover.ActivityChunk(index=2, rows=[row2])]
 
@@ -769,17 +735,12 @@ class MomentsPipelineTests(unittest.TestCase):
                  patch.object(discover, "structured_completion", side_effect=structured):
                 discover.run(str(logs), model="fake")
 
-            compile_instructions = [
-                instruction for instruction in structured.instructions
-                if "Idea Cards From This Chunk" in instruction
-            ]
             reconcile_instructions = [
                 instruction for instruction in structured.instructions
                 if "Draft Candidates From Discovery" in instruction
             ]
-            self.assertEqual(len(compile_instructions), 2)
             self.assertEqual(len(reconcile_instructions), 1)
-            self.assertTrue(any("second chunk" in instruction for instruction in compile_instructions))
+            self.assertIn("second chunk", reconcile_instructions[0])
             candidate_file = _candidate_files(Path(d))[-1]
             self.assertIn("second chunk", candidate_file.read_text())
 
@@ -807,10 +768,9 @@ class MomentsPipelineTests(unittest.TestCase):
                 "---\n\nExisting body\n"
             )
             (tada / "results" / "paper-digest").mkdir(parents=True)
-            draft = _candidate(id="new-paper-tracker", slug="new-paper-tracker", evidence=["new evidence"])
-            update = _candidate(id="paper-digest", slug="paper-digest", evidence=["new evidence"])
+            draft = _candidate(id="new-paper-tracker", slug="new-paper-tracker", specific_instructions="Use new research signal.")
+            update = _candidate(id="paper-digest", slug="paper-digest", specific_instructions="Use new research signal.")
             structured = _FakeStructuredCompletion(
-                "```json\n" + json.dumps({"upserts": [draft], "rejected": [], "remove": [], "notes": ""}) + "\n```",
                 "```json\n"
                 + json.dumps({
                     "candidates": [update],
@@ -821,11 +781,13 @@ class MomentsPipelineTests(unittest.TestCase):
                 + "\n```",
             )
 
-            with patch.object(discover, "build_agent", return_value=(_FakeToolAgent(), None)), \
+            with patch.object(discover, "build_agent", return_value=(_FakeToolAgent(
+                "```json\n" + json.dumps({"tasks": [draft]}) + "\n```"
+            ), None)), \
                  patch.object(discover, "structured_completion", side_effect=structured):
                 result = discover.run(str(logs), model="fake")
 
-            self.assertIn("research/paper-digest", structured.instructions[1])
+            self.assertIn("research/paper-digest", structured.instructions[0])
             self.assertIn("Routed 1 candidates as updates", result)
             candidate_file = _candidate_files(root)[-1]
             candidate_text = candidate_file.read_text()
