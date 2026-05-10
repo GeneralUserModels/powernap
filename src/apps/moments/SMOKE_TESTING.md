@@ -189,8 +189,7 @@ find /tmp/powernap-moments-smoke/logs-tada -maxdepth 3 -type f \
 
 ## Prompt Iteration Loop
 
-Use this loop for prompt work:
-
+Use this loop for prompt work. In most cases, you may need to only really focus on discover.txt
 
 1. Create a temp log slice that contains both positive and negative examples.
 2. Run discovery and promotion end to end.
@@ -207,6 +206,8 @@ Use this loop for prompt work:
    generated candidates, and judgment.
 
 **Prefer generic prompt rules. Do not encode one-off examples from the smoke slice unless they represent a durable class of failures.**
+
+**Keep iterating repeatedly on prompts**: run over and over again till you're satistifed, recording progress and finalized candidates in an experiment log.
 
 ## Quality Rubric
 
@@ -226,24 +227,3 @@ Reject or revise candidates that:
 - are generic productivity advice;
 - require unavailable private data without a plausible source;
 - are so broad the executor cannot finish in one run.
-
-## Useful Verification Commands
-
-Run focused tests:
-
-```bash
-.venv/bin/python -m pytest tests/test_moments_pipeline.py -q
-```
-
-Run the full test suite:
-
-```bash
-.venv/bin/python -m pytest -q
-```
-
-Check patch hygiene:
-
-```bash
-git diff --check
-git status --short
-```
