@@ -187,6 +187,7 @@ class MemoryIngestTests(unittest.TestCase):
                             {"path": "index.md", "markdown": "# Memory Index\n\n- Project — project.md\n"},
                             {"path": "log.md", "markdown": f"# Memory Log\n\n## {today}\n- Created Project.\n"},
                         ],
+                        "delete_pages": [],
                         "notes": "finalized",
                     }) + "\n```"
                 raise AssertionError(pass_name)
@@ -249,6 +250,7 @@ class MemoryIngestTests(unittest.TestCase):
                             {"path": "index.md", "markdown": "# Memory Index\n\n- Alpha — alpha.md\n- Beta — beta.md\n"},
                             {"path": "log.md", "markdown": f"# Memory Log\n\n## {today}\n- Created Alpha and Beta.\n"},
                         ],
+                        "delete_pages": [],
                         "notes": "finalized",
                     }) + "\n```"
                 raise AssertionError(pass_name)
@@ -312,6 +314,7 @@ class MemoryIngestTests(unittest.TestCase):
                         {"path": "index.md", "markdown": "# Memory Index\n\n- Project — project.md\n"},
                         {"path": "log.md", "markdown": f"# Memory Log\n\n## {today}\n- Updated Project.\n"},
                     ],
+                    "delete_pages": [],
                     "notes": "finalized",
                 }) + "\n```"),
             ]
@@ -370,7 +373,12 @@ class MemoryIngestTests(unittest.TestCase):
                         "update_pages": [],
                         "notes": "updated",
                     }) + "\n```"
-                return "```json\n" + json.dumps({"create_pages": [], "update_pages": [], "notes": "did not repair index or log"}) + "\n```"
+                return "```json\n" + json.dumps({
+                    "create_pages": [],
+                    "update_pages": [],
+                    "delete_pages": [],
+                    "notes": "did not repair index or log",
+                }) + "\n```"
 
             with patch.object(ingest, "_run_agent_pass", side_effect=fake_pass):
                 with self.assertRaises(RuntimeError):
@@ -484,8 +492,8 @@ class MemoryIngestTests(unittest.TestCase):
             self.assertIn("Return the full replacement markdown for the target page", prompt)
             self.assertIn("Do not update `index.md`, `log.md`, or `schema.md`.", prompt)
             self.assertIn("Do not call `write_file` or `edit_file`", prompt)
-            self.assertIn("`create_pages`", prompt)
-            self.assertIn("one-item `update_pages`", prompt)
+            self.assertIn("the harness will apply the final result", prompt)
+            self.assertNotIn("structured response schema enforces", prompt)
             self.assertIn("## Existing Content Page Metadata", prompt)
             self.assertIn("`project.md` — title: Project", prompt)
             self.assertIn("Preserve source dates exactly.", prompt)
@@ -679,7 +687,8 @@ class MemoryIngestTests(unittest.TestCase):
             self.assertIn("`New Project`", create_prompt)
             self.assertIn("likely future relevance", create_prompt)
             self.assertIn("Include the best-fit `category` in frontmatter", create_prompt)
-            self.assertIn("empty `create_pages` list", create_prompt)
+            self.assertIn("skip it and explain briefly why", create_prompt)
+            self.assertNotIn("structured response schema enforces", create_prompt)
 
     def test_inventory_prompt_allows_first_run_discovery_without_broad_source_rules(self):
         with tempfile.TemporaryDirectory() as d:
@@ -776,8 +785,8 @@ class MemoryIngestTests(unittest.TestCase):
             self.assertIn("Do not list or read content pages just to build `index.md`", prompt)
             self.assertIn("Do not use shell redirection, append operators, heredocs", prompt)
             self.assertIn("Do not call `write_file` or `edit_file`", prompt)
-            self.assertIn("`update_pages`", prompt)
-            self.assertIn("`delete_pages`", prompt)
+            self.assertIn("the harness will apply the final result", prompt)
+            self.assertNotIn("structured response schema enforces", prompt)
             self.assertIn("Planning is optional. Keep it compact", prompt)
             self.assertIn("read them together once", prompt)
 

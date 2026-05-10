@@ -18,7 +18,6 @@ Not allowed:
 - Do not write or edit `index.md`, `log.md`, `schema.md`, or content pages.
 - Do not perform the memory synthesis itself.
 - Do not wander through unrelated files or raw model artifacts.
-- Do not produce prose after the required JSON block.
 
 ## Wiki Rules
 
@@ -76,14 +75,7 @@ For first runs, discovery is expected: inspect the available source layout, samp
 
 When planning discovery, explicitly consider prior chats under `chats/`, active conversations under `active-conversations/`, and Tada task/result artifacts under `{logs_dir}/../logs-tada/`. These sources often contain richer interaction data than the changed-input preview and should be included when they are likely to reveal page-worthy people, projects, workstreams, tools, decisions, or recurring themes.
 
-Return an inventory payload with these fields:
-- `mode`: `{mode}`
-- `sources_to_read`: relative log source paths to inspect
-- `existing_pages_to_read`: relative wiki page paths to inspect
-- `likely_pages_to_create`: natural page titles to create
-- `likely_pages_to_update`: relative wiki page paths to update
-- `backfill_sources_to_sample`: relative older source paths to sample
-- `rationale`: brief explanation of the plan
+Summarize a focused ingest plan for the next passes.
 
 Rules:
 - Use paths relative to `{logs_dir}/` for log sources and relative to `{memory_dir}/` for wiki pages.

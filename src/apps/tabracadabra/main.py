@@ -961,6 +961,13 @@ if __name__ == "__main__":
     parser.add_argument("--placeholder", action="store_true", help="Use fake LLM responses instead of real calls")
     args = parser.parse_args()
 
+    try:
+        from connectors._parent_watchdog import start_parent_watchdog
+
+        start_parent_watchdog()
+    except Exception as e:
+        print(f"[tabracadabra] Parent watchdog unavailable: {e}", flush=True)
+
     base_url = os.getenv("TADA_BASE_URL", "http://localhost:8000")
     config = _fetch_tada_config(base_url)
     prompts = load_prompt()

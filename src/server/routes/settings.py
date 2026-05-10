@@ -50,14 +50,12 @@ async def update_settings(update: SettingsUpdate, request: Request):
             # Start if not already running
             if state.tabracadabra_service is None:
                 try:
-                    from apps.tabracadabra.main import TabracadabraService, load_prompt
+                    from apps.tabracadabra.process_service import TabracadabraProcessService
 
-                    tab_config = {
-                        "model": cfg.tabracadabra_model,
-                        "api_key": cfg.resolve_api_key("tabracadabra_api_key"),
-                        "tada_base_url": f"http://localhost:{os.environ.get('TADA_PORT', '8000')}",
-                    }
-                    service = TabracadabraService(config=tab_config, prompts=load_prompt(cfg.log_dir))
+                    service = TabracadabraProcessService(
+                        base_url=f"http://127.0.0.1:{os.environ.get('TADA_PORT', '8000')}",
+                        logs_dir=cfg.log_dir,
+                    )
                     service.start()
                     # Block until the event tap is registered with the run loop
                     # so the response only goes back once Option+Tab actually fires.

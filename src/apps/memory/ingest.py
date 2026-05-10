@@ -900,7 +900,7 @@ def run(
         subagent_api_key,
         final_response_model=InventoryPayload,
         final_instruction=(
-            "Convert the inventory work into the required structured inventory payload. "
+            "Summarize the inventory work as a grounded, bounded ingest plan. "
             "Use only paths and page titles grounded in the conversation and tool results."
         ),
         final_metadata_app="memory_inventory",
@@ -921,8 +921,8 @@ def run(
             instruction=_update_page_prompt(now, logs_dir, memory_dir, inputs, inventory, page_rel),
             payload_model=ExistingPageUpdatePayload,
             final_instruction=(
-                f"Return a structured existing-page update payload for `{page_rel}` only. "
-                "`create_pages` must be empty and `update_pages` must contain exactly one item with full replacement markdown. "
+                f"Summarize the result for `{page_rel}` only. "
+                "Include exactly one full replacement markdown document for the owned target page. "
                 "Do not include a path; the caller already owns the target path."
             ),
             final_metadata_app="memory_update_page",
@@ -938,10 +938,9 @@ def run(
             instruction=_create_candidate_prompt(now, logs_dir, memory_dir, inputs, inventory, candidate_title),
             payload_model=NewPageCreatePayload,
             final_instruction=(
-                f"Return a structured new-page create payload for `{candidate_title}`. "
-                "Use `create_pages` for at most one grounded new page and keep `update_pages` empty. "
-                "Each create item should contain markdown only, with no path. "
-                "If this candidate is not grounded enough or duplicates an existing page, return an empty `create_pages` list."
+                f"Summarize the create decision for `{candidate_title}`. "
+                "Include at most one grounded new page markdown document, with no path. "
+                "If this candidate is not grounded enough or duplicates an existing page, skip it."
             ),
             final_metadata_app="memory_create_page",
             require_create_missing=True,
@@ -983,9 +982,8 @@ def run(
         subagent_api_key,
         final_response_model=FinalizePageOpsPayload,
         final_instruction=(
-            "Convert the finalize pass work into the required structured page operation payload. "
-            "Return page operations that repair index.md, log.md, schema.md, or other validation issues. "
-            "Use `create_pages` only for minimal grounded stubs needed to resolve listed validation issues."
+            "Summarize the finalize pass as page operations that repair index.md, log.md, schema.md, "
+            "or other validation issues. Include only minimal grounded stubs needed to resolve listed validation issues."
         ),
         final_metadata_app="memory_finalize_pages",
     )

@@ -19,7 +19,7 @@ Not allowed:
 - Do not update `index.md`, `log.md`, or `schema.md`.
 - Do not do catalog repair or operations logging.
 - Do not return a new inventory plan.
-- Do not call `write_file` or `edit_file`; return JSON operations only.
+- Do not call `write_file` or `edit_file`; the harness will apply the final result.
 
 Execution guidance:
 - Planning is optional. Keep it compact, and do not use PlanUpdate just to mark routine items complete.
@@ -127,6 +127,4 @@ Revise only `{target_page_path}` from the inventory plan and relevant evidence. 
 
 Preserve useful existing facts, structure, nuance, confidence scores, and links. Add or revise material only when it is grounded in sources you read. When evidence points toward what the user is likely to need next, encode that as useful memory rather than only describing the past.
 
-Do not write files directly. Python already knows the target path and will apply the returned full-page replacement after validating frontmatter.
-
-When finished, return the update-page result. The structured response schema enforces empty `create_pages`, one-item `update_pages`, `markdown`, and `notes`. Do not include a path in the returned item.
+Do not write files directly. Python already knows the target path and will apply the final full-page replacement after validating frontmatter.

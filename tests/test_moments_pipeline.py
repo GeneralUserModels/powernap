@@ -109,7 +109,7 @@ class _FakeExecuteAgent:
         self.messages.append(messages)
         prompt = messages[0]["content"]
         self.test_case.assertIn("/output", prompt)
-        self.test_case.assertIn("Include an `index.md` page", prompt)
+        self.test_case.assertIn("Start with an `index.md` page", prompt)
         self.test_case.assertIn("Use markdown links liberally", prompt)
         self.test_case.assertIn("Do not build a website or app", prompt)
         output_pages_dir = self.output_dir / "output"
@@ -383,9 +383,9 @@ class MomentsPipelineTests(unittest.TestCase):
             self.assertIn("reading papers", discover_prompt)
             self.assertIn("(no drafts yet)", discover_prompt)
             self.assertIn('"tasks"', discover_prompt)
-            self.assertIn("Do not treat a visible button", discover_prompt)
-            self.assertIn("require explicit confirmation", discover_prompt)
             self.assertIn("Draft Candidates From Discovery", discover_structured.instructions[0])
+            self.assertIn("visible control or click alone", discover_structured.instructions[0])
+            self.assertIn("require explicit confirmation", discover_structured.instructions[0])
             self.assertIn("completed irreversible actions", discover_structured.instructions[0])
             candidate_files = _candidate_files(root)
             self.assertEqual(len(candidate_files), 1)
