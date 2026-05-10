@@ -1,8 +1,8 @@
 # Moments Smoke Testing
 
-Use this when changing discovery prompts or source ingestion. The goal is to run
-the real discovery and promotion pipeline on a small, disposable subset of logs,
-inspect the generated moments, then iterate.
+Use this when changing discovery prompts or source ingestion. The goal is to run the real discovery and promotion pipeline on a small, disposable subset of logs, inspect the generated moments, then iterate.
+
+NOTE: When editing prompts, DELETING, rewording, and simplifying is often better than adding MORE constraints.
 
 ## What To Test
 
@@ -191,24 +191,22 @@ find /tmp/powernap-moments-smoke/logs-tada -maxdepth 3 -type f \
 
 Use this loop for prompt work:
 
-1. Pick one failure mode, such as self-referential tasks, weak evidence, passive
-   recaps, over-specific code tasks, or missed meeting prep.
-2. Create a temp log slice that contains both positive and negative examples.
-3. Run discovery and promotion end to end.
-4. Inspect the candidate JSON, not just the summary.
-5. Edit the smallest relevant prompt:
+
+1. Create a temp log slice that contains both positive and negative examples.
+2. Run discovery and promotion end to end.
+3. Inspect the candidate JSON, not just the summary.
+4. Edit the smallest relevant prompt:
    - `prompts/rules/discover.txt` for discovery behavior and rejection rules.
    - `prompts/shared/quality_bar.txt` for broad quality thresholds.
    - `prompts/discover.txt` for ideation task framing.
    - `prompts/discover_compile.txt` for candidate field discipline.
    - `prompts/promote.txt` or `prompts/rules/promote.txt` for ranking.
-6. Rerun the exact same temp slice and compare candidate slugs, evidence,
+5. Rerun the exact same temp slice and compare candidate slugs, evidence,
    desired artifacts, and promotion order.
-7. Record the attempt in an iteration log with the command, slice definition,
+6. Record the attempt in an iteration log with the command, slice definition,
    generated candidates, and judgment.
 
-Prefer generic prompt rules. Do not encode one-off examples from the smoke slice
-unless they represent a durable class of failures.
+**Prefer generic prompt rules. Do not encode one-off examples from the smoke slice unless they represent a durable class of failures.**
 
 ## Quality Rubric
 
