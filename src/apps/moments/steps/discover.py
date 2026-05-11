@@ -412,7 +412,7 @@ def _build_instruction(
     *,
     now: str,
     mode: str,
-    last_discovery: datetime | None,
+    last_run: datetime | None,
     activity_since: datetime | None,
     logs_dir: str,
     tada_dir: Path,
@@ -424,7 +424,7 @@ def _build_instruction(
     return DISCOVER_TEMPLATE.format(
         now=now,
         mode=mode,
-        last_discovery_date=last_discovery.strftime("%Y-%m-%d %H:%M") if last_discovery else "never",
+        last_run_date=last_run.strftime("%Y-%m-%d %H:%M") if last_run else "never",
         activity_since_date=activity_since.strftime("%Y-%m-%d %H:%M") if activity_since else "beginning",
         logs_dir=logs_dir,
         tada_dir=str(tada_dir),
@@ -495,7 +495,7 @@ def _process_discovery_chunk(
     chunk: ActivityChunk,
     now: str,
     mode: str,
-    last_discovery: datetime | None,
+    last_run: datetime | None,
     activity_since: datetime | None,
     logs_dir: str,
     tada_dir: Path,
@@ -509,7 +509,7 @@ def _process_discovery_chunk(
     instruction = _build_instruction(
         now=now,
         mode=mode,
-        last_discovery=last_discovery,
+        last_run=last_run,
         activity_since=activity_since,
         logs_dir=logs_dir,
         tada_dir=tada_dir,
@@ -538,7 +538,7 @@ def _process_discovery_chunks(
     chunks: list[ActivityChunk],
     now: str,
     mode: str,
-    last_discovery: datetime | None,
+    last_run: datetime | None,
     activity_since: datetime | None,
     logs_dir: str,
     tada_dir: Path,
@@ -558,7 +558,7 @@ def _process_discovery_chunks(
                 chunk=chunk,
                 now=now,
                 mode=mode,
-                last_discovery=last_discovery,
+                last_run=last_run,
                 activity_since=activity_since,
                 logs_dir=logs_dir,
                 tada_dir=tada_dir,
@@ -580,7 +580,7 @@ def _process_discovery_chunks(
                 chunk=chunk,
                 now=now,
                 mode=mode,
-                last_discovery=last_discovery,
+                last_run=last_run,
                 activity_since=activity_since,
                 logs_dir=logs_dir,
                 tada_dir=tada_dir,
@@ -604,19 +604,20 @@ def run(
     api_key: str | None = None,
     subagent_model: str | None = None,
     subagent_api_key: str | None = None,
+    write_run_checkpoint: bool = True,
 ) -> str:
     logs_path = Path(logs_dir).resolve()
     logs_dir = str(logs_path)
     tada_dir = logs_path.parent / "logs-tada"
     state_dir = discovery_state_dir(tada_dir)
-    checkpoint_path = state_dir / ".last_discovery"
+    checkpoint_path = tada_dir / ".last_run"
     tada_dir.mkdir(parents=True, exist_ok=True)
     state_dir.mkdir(parents=True, exist_ok=True)
     _ensure_sandbox([str(tada_dir.resolve())])
 
-    last_discovery = read_checkpoint(checkpoint_path, default_age=DEFAULT_MISSING_CHECKPOINT_AGE)
-    mode = "first_run" if last_discovery is None else "incremental"
-    activity_since = last_discovery if last_discovery is not None else _initial_discovery_since(logs_path)
+    last_run = read_checkpoint(checkpoint_path, default_age=DEFAULT_MISSING_CHECKPOINT_AGE)
+    mode = "first_run" if last_run is None else "incremental"
+    activity_since = last_run if last_run is not None else _initial_discovery_since(logs_path)
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
     accepted_moments = summarize_tada_tasks(tada_dir)
     feedback_summary = _feedback_state_summary(tada_dir)
@@ -632,7 +633,7 @@ def run(
         chunks=chunks,
         now=now,
         mode=mode,
-        last_discovery=last_discovery,
+        last_run=last_run,
         activity_since=activity_since,
         logs_dir=logs_dir,
         tada_dir=tada_dir,
@@ -667,7 +668,8 @@ def run(
         notes.append(f"reconciliation: {reconcile_notes}")
 
     candidate_path = write_candidates_jsonl(tada_dir, candidates)
-    write_checkpoint(checkpoint_path)
+    if write_run_checkpoint:
+        write_checkpoint(checkpoint_path)
     summary = [
         f"Mode: {mode}",
         f"Activity window starts after: {activity_since.strftime('%Y-%m-%d %H:%M')}",

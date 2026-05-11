@@ -9,11 +9,8 @@ const tadaDir = path.resolve(repoRoot, process.env.TADA_TADA_DIR || "logs-tada")
 const oldTimestamp = "2000-01-01T00:00:00";
 
 const targets = {
-  memex: [path.join(logDir, "memory", ".last_ingest")],
-  discovery: [
-    path.join(tadaDir, "_discovery", ".last_discovery"),
-    path.join(tadaDir, "_discovery", ".last_promotion"),
-  ],
+  memex: [path.join(logDir, "memory", ".last_run")],
+  discovery: [path.join(tadaDir, ".last_run")],
 };
 
 const requested = process.argv[2] || "all";

@@ -75,20 +75,18 @@ async def start_services(state: ServerState) -> None:
     state._services_starting = True
 
     # Tabracadabra event tap goes up FIRST so the Option+Tab tap is live before
-    # any other service competes for resources. The "Getting ready" screen gates
-    # on tabracadabra_ready, so starting it ahead of connectors and init_model
-    # is what unblocks the boot screen quickly. Spawning the tap is just a
-    # daemon-thread start — it doesn't block this coroutine.
+    # any other service competes for resources. The tap runs in a helper process
+    # because active CGEvent taps sit in the user's typing-latency path; keeping
+    # it outside the Python server prevents memory/moments agent work from
+    # delaying keyboard events through GIL contention.
     if sys.platform == "darwin" and is_enabled(state.config, "tabracadabra") and state.config.tabracadabra_enabled:
         try:
-            from apps.tabracadabra.main import TabracadabraService, load_prompt
+            from apps.tabracadabra.process_service import TabracadabraProcessService
 
-            tabra_config = {
-                "model": state.config.tabracadabra_model,
-                "api_key": state.config.resolve_api_key("tabracadabra_api_key"),
-                "tada_base_url": f"http://localhost:{os.environ.get('TADA_PORT', '8000')}",
-            }
-            service = TabracadabraService(config=tabra_config, prompts=load_prompt(state.config.log_dir))
+            service = TabracadabraProcessService(
+                base_url=f"http://127.0.0.1:{os.environ.get('TADA_PORT', '8000')}",
+                logs_dir=state.config.log_dir,
+            )
             service.start()
             state.tabracadabra_service = service
         except Exception:

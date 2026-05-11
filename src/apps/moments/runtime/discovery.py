@@ -7,6 +7,7 @@ import logging
 from pathlib import Path
 
 from server.feature_flags import is_enabled
+from apps.moments.core.incremental import write_checkpoint
 
 logger = logging.getLogger(__name__)
 
@@ -32,24 +33,26 @@ class _DiscoveryBase:
 class MomentsDiscovery(_DiscoveryBase):
     """Discovers candidate moments from activity logs."""
 
-    def run(self) -> str:
+    def run(self, *, write_run_checkpoint: bool = True) -> str:
         """Analyze logs and write task files. Blocking."""
         from apps.moments.steps.discover import run as moments_run
         return moments_run(
             self.logs_dir, model=self.model, api_key=self.api_key,
             subagent_model=self.subagent_model, subagent_api_key=self.subagent_api_key,
+            write_run_checkpoint=write_run_checkpoint,
         )
 
 
 class TaskFilter(_DiscoveryBase):
     """Promotes discovered candidates into logs-tada/."""
 
-    def run(self) -> str:
+    def run(self, *, write_run_checkpoint: bool = True) -> str:
         """Promote candidate moments through tada. Blocking."""
         from apps.moments.steps.promote import run as filter_run
         return filter_run(
             self.logs_dir, model=self.model, api_key=self.api_key,
             subagent_model=self.subagent_model, subagent_api_key=self.subagent_api_key,
+            write_run_checkpoint=write_run_checkpoint,
         )
 
 
@@ -85,8 +88,7 @@ async def run_moments_discovery(state) -> None:
     await _ensure_sandbox_async([tada_dir])
 
     state_dir = discovery_state_dir(tada_path)
-    discovery_checkpoint = state_dir / ".last_discovery"
-    promotion_checkpoint = state_dir / ".last_promotion"
+    run_checkpoint = tada_path / ".last_run"
 
     while True:
         try:
@@ -96,9 +98,7 @@ async def run_moments_discovery(state) -> None:
                 continue
 
             schedule = getattr(state.config, "moments_discovery_schedule", "daily at 2am")
-            discovery_due = scheduled_service_due(schedule, discovery_checkpoint)
-            promotion_due = scheduled_service_due(schedule, promotion_checkpoint)
-            if not (discovery_due or promotion_due):
+            if not scheduled_service_due(schedule, run_checkpoint):
                 continue
 
             cfg = state.config
@@ -113,6 +113,7 @@ async def run_moments_discovery(state) -> None:
                 try:
                     discovery_summary = await asyncio.to_thread(
                         MomentsDiscovery(logs_dir, model, api_key, subagent_model, subagent_api_key).run,
+                        write_run_checkpoint=False,
                     )
                     logger.info("Discovery complete:\n%s", discovery_summary)
                 except Exception:
@@ -123,6 +124,7 @@ async def run_moments_discovery(state) -> None:
                 await state.broadcast_activity("moments_discovery", "Promoting Tadas…")
                 promotion_summary = await asyncio.to_thread(
                     TaskFilter(logs_dir, model, api_key, subagent_model, subagent_api_key).run,
+                    write_run_checkpoint=False,
                 )
                 logger.info("Promotion complete:\n%s", promotion_summary)
 
@@ -133,6 +135,7 @@ async def run_moments_discovery(state) -> None:
                 )
                 logger.info("Trigger check complete:\n%s", trigger_summary)
 
+                write_checkpoint(run_checkpoint)
                 logger.info("Discovery pipeline complete")
             finally:
                 await state.broadcast_activity("moments_discovery")

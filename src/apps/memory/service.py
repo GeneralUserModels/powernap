@@ -6,7 +6,6 @@ import argparse
 import os
 import asyncio
 import logging
-from datetime import datetime, timedelta
 from pathlib import Path
 
 from server.feature_flags import is_enabled
@@ -71,27 +70,16 @@ class MemoryLint:
         )
 
 
-def _read_last_run(p: Path) -> datetime | None:
-    """Read a last-run timestamp from disk."""
-    if not p.exists():
-        return None
-    try:
-        return datetime.fromisoformat(p.read_text().strip())
-    except (ValueError, OSError):
-        return None
-
-
 async def run_memory_service(state) -> None:
     """Background task: poll every SCAN_INTERVAL and run ingest whenever the
-    most recent scheduled occurrence hasn't completed yet. Lint runs alongside
-    ingest if its own 6-day cooldown has elapsed.
+    most recent scheduled occurrence hasn't completed yet. Lint runs as part
+    of the same memory feature run.
     """
 
     logger.info("Memory wiki service started")
 
     logs_dir = str(Path(state.config.log_dir).resolve())
-    ingest_checkpoint_file = Path(logs_dir) / "memory" / ".last_ingest"
-    lint_checkpoint_file = Path(logs_dir) / "memory" / ".last_lint"
+    run_checkpoint_file = Path(logs_dir) / "memory" / ".last_run"
 
     # Pre-initialize sandbox on the event-loop thread (signal handlers
     # can only be registered here, not inside the worker thread).
@@ -105,7 +93,7 @@ async def run_memory_service(state) -> None:
                 continue
 
             schedule = getattr(state.config, "memory_schedule", "daily at 3am")
-            if not scheduled_service_due(schedule, ingest_checkpoint_file):
+            if not scheduled_service_due(schedule, run_checkpoint_file):
                 continue
 
             cfg = state.config
@@ -126,18 +114,15 @@ async def run_memory_service(state) -> None:
                 logger.info("Memory: ingest complete")
                 await state.broadcast("memory_updated", {})
 
-                lint_last_run = _read_last_run(lint_checkpoint_file)
-                should_lint = lint_last_run is None or (datetime.now() - lint_last_run) >= timedelta(days=6)
-                if should_lint:
-                    lint_msg = "Auditing memories…"
-                    await state.broadcast_activity("memory", lint_msg)
-                    lint_on_round = state.make_round_callback("memory", lint_msg)
-                    logger.info("Memory: running lint (weekly)")
-                    await asyncio.to_thread(
-                        MemoryLint(logs_dir, model, api_key, subagent_model, subagent_api_key).run,
-                        on_round=lint_on_round,
-                    )
-                    logger.info("Memory: lint complete")
+                lint_msg = "Auditing memories…"
+                await state.broadcast_activity("memory", lint_msg)
+                lint_on_round = state.make_round_callback("memory", lint_msg)
+                logger.info("Memory: running lint")
+                await asyncio.to_thread(
+                    MemoryLint(logs_dir, model, api_key, subagent_model, subagent_api_key).run,
+                    on_round=lint_on_round,
+                )
+                logger.info("Memory: lint complete")
 
             finally:
                 await state.broadcast_activity("memory")

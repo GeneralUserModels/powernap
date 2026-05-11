@@ -102,7 +102,7 @@ export const deleteMemoryPage = (path: string) =>
   request("DELETE", `/api/memory/pages/${path}`);
 
 export const getMemoryStatus = () =>
-  request("GET", "/api/memory/status") as Promise<{ exists: boolean; last_ingest: string | null; last_lint: string | null; page_count: number }>;
+  request("GET", "/api/memory/status") as Promise<{ exists: boolean; last_run: string | null; page_count: number }>;
 
 // ── Onboarding ───────────────────────────────────────────────
 export const getGoogleConnectorStatus = () =>

@@ -164,8 +164,8 @@ PY
 Discovery is incremental. Seed a temp checkpoint so it reads the intended window.
 
 ```bash
-mkdir -p /tmp/powernap-moments-smoke/logs-tada/_discovery
-printf '2026-04-25T00:00:00' > /tmp/powernap-moments-smoke/logs-tada/_discovery/.last_discovery
+mkdir -p /tmp/powernap-moments-smoke/logs-tada
+printf '2026-04-25T00:00:00' > /tmp/powernap-moments-smoke/logs-tada/.last_run
 ```
 
 If you want a first-run test, skip this checkpoint and let discovery choose its
@@ -387,9 +387,9 @@ if run_root.exists():
     shutil.rmtree(run_root)
 shutil.copytree(base / "logs", run_root / "logs")
 
-state = run_root / "logs-tada" / "_discovery"
+state = run_root / "logs-tada"
 state.mkdir(parents=True, exist_ok=True)
-(state / ".last_discovery").write_text("2026-04-25T00:00:00")
+(state / ".last_run").write_text("2026-04-25T00:00:00")
 
 for attr, value in json.loads((round_root / "variants" / name / "overrides.json").read_text()).items():
     setattr(discover, attr, value)

@@ -17,7 +17,7 @@ Not allowed:
 - Do not update existing normal content pages.
 - Do not update `index.md`, `log.md`, or `schema.md`.
 - Do not do catalog repair or operations logging.
-- Do not call `write_file` or `edit_file`; return JSON operations only.
+- Do not call `write_file` or `edit_file`; the harness will apply the final result.
 
 Execution guidance:
 - Read evidence for this candidate before writing.
@@ -116,8 +116,6 @@ Use tools to read evidence directly. Use subagents for independent source groups
 
 Decide whether `{candidate_title}` deserves one new normal memory page. Read the relevant planned sources and any adjacent evidence needed to avoid a duplicate or shallow page.
 
-If it is grounded and distinct, return one `create_pages` entry with full markdown including YAML frontmatter. Do not include a path; Python will derive the page path from the candidate title. If it is not grounded enough or duplicates an existing page, return an empty `create_pages` list and explain briefly in `notes`.
+If it is grounded and distinct, include one full markdown page with YAML frontmatter. Do not choose a path; Python will derive the page path from the candidate title. If it is not grounded enough or duplicates an existing page, skip it and explain briefly why.
 
 Do not write files directly. Python will apply the returned operation after validating frontmatter.
-
-When finished, return the create-page result. The structured response schema enforces `create_pages`, empty `update_pages`, `markdown`, and `notes`. Do not include a path in the returned item.
