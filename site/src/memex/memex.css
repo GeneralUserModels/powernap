@@ -48,8 +48,8 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 20px 20px 10px;
-  gap: 14px;
+  padding: 0 0 10px;
+  gap: 0;
   height: 100vh;
   height: 100dvh;
 }
@@ -67,150 +67,19 @@
 /* ── Hero ──────────────────────────────────────────────── */
 
 .memex-hero {
-  max-width: 720px;
-  text-align: center;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
   flex-shrink: 0;
 }
 
 .memex-hero-title {
-  font-size: clamp(26px, 4.4vw, 40px);
-  font-weight: 700;
-  letter-spacing: -0.03em;
-  line-height: 1.05;
-  color: var(--text);
   margin: 0;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.28em;
 }
 
 .memex-hero-logo {
-  width: 0.88em;
-  height: 0.88em;
   color: var(--sage);
-  flex-shrink: 0;
 }
 
 .memex-hero-subtitle {
-  font-size: 14px;
-  line-height: 1.45;
-  color: var(--text-secondary);
-  max-width: 540px;
-  margin: 0;
-}
-
-.memex-hero-actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 8px;
-  margin-top: 6px;
-}
-
-.memex-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 7px 14px;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 600;
-  font-family: var(--fs-sans);
-  letter-spacing: -0.002em;
-  cursor: pointer;
-  text-decoration: none;
-  border: 1px solid transparent;
-  transition:
-    background 0.15s ease,
-    border-color 0.15s ease,
-    box-shadow 0.15s ease,
-    transform 0.15s ease;
-}
-
-.memex-btn svg {
-  width: 13px;
-  height: 13px;
-}
-
-.memex-btn:active { transform: scale(0.98); }
-
-.memex-btn-primary {
-  color: white;
-  background: var(--active-green);
-  border-color: var(--active-green);
-  box-shadow:
-    0 1px 2px rgba(44, 58, 40, 0.15),
-    inset 0 1px 0 rgba(255, 255, 255, 0.25);
-}
-.memex-btn-primary:hover {
-  background: #4E9340;
-  border-color: #4E9340;
-}
-
-.memex-btn-secondary {
-  color: var(--text);
-  background: var(--glass);
-  border-color: var(--glass-border);
-  backdrop-filter: blur(30px) saturate(1.3);
-  -webkit-backdrop-filter: blur(30px) saturate(1.3);
-}
-.memex-btn-secondary:hover {
-  background: rgba(255, 255, 255, 0.82);
-  border-color: rgba(var(--sage-rgb), 0.32);
-}
-
-.memex-btn-accent {
-  color: var(--text);
-  background: rgba(var(--mint-rgb), 0.5);
-  border-color: rgba(var(--sage-rgb), 0.35);
-}
-.memex-btn-accent:hover {
-  background: rgba(var(--mint-rgb), 0.75);
-  border-color: rgba(var(--sage-rgb), 0.5);
-}
-
-.memex-btn-ghost {
-  color: var(--text-secondary);
-  background: transparent;
-  border-color: var(--glass-border);
-}
-.memex-btn-ghost:hover {
-  background: var(--glass);
-  color: var(--text);
-}
-
-.memex-btn-sub {
-  font-weight: 450;
-  opacity: 0.75;
-  margin-left: -2px;
-}
-
-/* ── Footer ────────────────────────────────────────────── */
-
-.memex-footer {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 10.5px;
-  color: var(--text-tertiary);
-  padding: 0;
-  font-family: var(--fs-mono);
-  flex-shrink: 0;
-}
-
-.memex-footer a {
-  color: var(--text-secondary);
-  text-decoration: none;
-  border-bottom: 1px solid rgba(var(--sage-rgb), 0.25);
-}
-
-.memex-footer a:hover {
-  color: var(--active-green);
-  border-bottom-color: var(--active-green);
+  margin-top: 0;
 }
 
 /* ── Stage (demo canvas) ───────────────────────────────── */
@@ -219,8 +88,9 @@
   width: 100%;
   flex: 1;
   min-height: 0;
+  padding: 12px 32px 34px;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
   position: relative;
 }
@@ -249,6 +119,11 @@
     inset 0 1px 0 rgba(255, 255, 255, 0.6);
   container-type: size;
   container-name: canvas;
+}
+
+.memex-stage[data-interactive] .memex-canvas {
+  width: min(100%, 1040px);
+  height: clamp(390px, 50vh, 500px);
 }
 
 /* Subtle grain, matching the app */
@@ -316,7 +191,7 @@
 .memex-app {
   color: var(--text);
   font-weight: 650;
-  letter-spacing: 0.005em;
+  letter-spacing: 0;
 }
 
 .memex-path-sep { color: var(--text-tertiary); }
@@ -337,7 +212,7 @@
 .memex-status {
   font-size: 10.5px;
   font-weight: 600;
-  letter-spacing: 0.04em;
+  letter-spacing: 0;
   text-transform: uppercase;
   padding: 2px 8px;
   border-radius: 999px;
@@ -370,6 +245,10 @@
   transition: grid-template-columns 1.2s cubic-bezier(0.6, 0.05, 0.2, 1);
 }
 
+.memex-stage[data-interactive] .memex-body {
+  grid-template-columns: 1fr;
+}
+
 .memex-left,
 .memex-right {
   display: flex;
@@ -382,6 +261,14 @@
 
 .memex-left {
   border-right: 1px solid rgba(var(--sage-rgb), 0.1);
+}
+
+.memex-stage[data-interactive] .memex-right {
+  padding: 18px 20px 20px;
+}
+
+.memex-stage[data-interactive] .memex-right-header {
+  display: none;
 }
 
 .memex-left-header,
@@ -397,7 +284,7 @@
   font-size: 10px;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: 0;
   color: var(--text-tertiary);
 }
 
@@ -438,7 +325,7 @@
   font-size: 10.5px;
   color: var(--text-tertiary);
   text-transform: lowercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0;
   margin-bottom: 6px;
   flex-shrink: 0;
 }
@@ -567,7 +454,7 @@
 .synth-model {
   font-size: 10.5px;
   font-weight: 700;
-  letter-spacing: 0.04em;
+  letter-spacing: 0;
   text-transform: uppercase;
   padding: 2px 8px;
   border-radius: 999px;
@@ -592,7 +479,7 @@
   color: var(--text);
   min-height: 38px;
   font-weight: 450;
-  letter-spacing: -0.003em;
+  letter-spacing: 0;
 }
 
 .synth-text {
@@ -691,6 +578,10 @@ button.wikilink:active {
   min-height: 0;
 }
 
+.memex-stage[data-interactive] .wiki-view {
+  grid-template-columns: 248px minmax(0, 1fr);
+}
+
 .file-tree {
   background: var(--glass);
   backdrop-filter: blur(30px) saturate(1.3);
@@ -752,6 +643,7 @@ button.wikilink:active {
 }
 
 .ft-file {
+  position: relative;
   display: flex;
   gap: 8px;
   align-items: center;
@@ -765,6 +657,25 @@ button.wikilink:active {
   text-align: left;
   border: none;
   background: transparent;
+}
+
+.ft-file-new {
+  color: var(--text);
+  animation:
+    ft-file-in 0.4s cubic-bezier(0.2, 0.7, 0.2, 1) both,
+    ft-file-pulse 1.15s ease-out 3 0.15s;
+}
+
+.ft-file-new::after {
+  content: "";
+  width: 6px;
+  height: 6px;
+  margin-left: 2px;
+  border-radius: 999px;
+  background: var(--active-green);
+  box-shadow: 0 0 0 0 rgba(var(--sage-rgb), 0.42);
+  animation: ft-file-dot-pulse 1.15s ease-out 3 0.15s;
+  flex-shrink: 0;
 }
 
 button.ft-file {
@@ -816,6 +727,42 @@ button.ft-file {
   100% { opacity: 1; transform: translateX(0); }
 }
 
+@keyframes ft-file-pulse {
+  0% {
+    background: rgba(var(--sage-rgb), 0.24);
+    box-shadow:
+      inset 2px 0 0 var(--sage),
+      0 0 0 0 rgba(var(--sage-rgb), 0.26);
+  }
+  55% {
+    background: rgba(var(--sage-rgb), 0.12);
+    box-shadow:
+      inset 2px 0 0 var(--sage),
+      0 0 0 7px rgba(var(--sage-rgb), 0);
+  }
+  100% {
+    background: transparent;
+    box-shadow:
+      inset 2px 0 0 rgba(var(--sage-rgb), 0.45),
+      0 0 0 0 rgba(var(--sage-rgb), 0);
+  }
+}
+
+@keyframes ft-file-dot-pulse {
+  0% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(var(--sage-rgb), 0.42);
+  }
+  70% {
+    transform: scale(1.08);
+    box-shadow: 0 0 0 7px rgba(var(--sage-rgb), 0);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(var(--sage-rgb), 0);
+  }
+}
+
 /* ── Wiki page pane ────────────────────────────────────── */
 
 .wiki-page-pane {
@@ -845,14 +792,14 @@ button.ft-file {
 .wiki-idle-title {
   font-size: 34px;
   font-weight: 600;
-  letter-spacing: -0.02em;
+  letter-spacing: 0;
   color: var(--text-secondary);
 }
 
 .wiki-idle-sub {
   font-size: 12px;
   margin-top: 8px;
-  letter-spacing: 0.04em;
+  letter-spacing: 0;
   color: var(--text-tertiary);
 }
 
@@ -894,7 +841,7 @@ button.ft-file {
 .wiki-h1 {
   font-size: clamp(20px, 2.4cqi, 28px);
   line-height: 1.15;
-  letter-spacing: -0.02em;
+  letter-spacing: 0;
   color: var(--text);
   margin: 0;
   font-weight: 700;
@@ -912,7 +859,7 @@ button.ft-file {
   border-radius: 999px;
   flex-shrink: 0;
   white-space: nowrap;
-  letter-spacing: 0.01em;
+  letter-spacing: 0;
   border: 1px solid;
   transition: color 0.25s ease, background 0.25s ease, border-color 0.25s ease;
 }
@@ -924,7 +871,7 @@ button.ft-file {
 .wiki-confidence-label {
   font-size: 0.88em;
   font-weight: 550;
-  letter-spacing: 0.03em;
+  letter-spacing: 0;
   opacity: 0.8;
 }
 
@@ -961,7 +908,7 @@ button.ft-file {
   color: var(--text);
   margin: 14px 0 6px;
   font-weight: 660;
-  letter-spacing: -0.005em;
+  letter-spacing: 0;
   padding-bottom: 4px;
   border-bottom: 1px solid rgba(var(--sage-rgb), 0.14);
 }
@@ -1019,7 +966,7 @@ button.ft-file {
   background: rgba(var(--sage-rgb), 0.12);
   padding: 2px 8px;
   border-radius: 999px;
-  letter-spacing: 0.02em;
+  letter-spacing: 0;
   font-weight: 600;
 }
 
@@ -1135,7 +1082,7 @@ button.ft-file {
   top: 52%;
   transform: translate(-50%, -50%);
   font-size: 11px;
-  letter-spacing: 0.22em;
+  letter-spacing: 0;
   text-transform: uppercase;
   color: var(--sage);
   font-weight: 700;
@@ -1150,6 +1097,6 @@ button.ft-file {
 
 /* ── Hide underlying site while memex is active ────────── */
 
-body:has(.memex-root) { overflow: hidden; }
+body:has(.memex-root) { overflow-x: hidden; }
 body:has(.memex-root) .grain,
 body:has(.memex-root) .page { display: none !important; }

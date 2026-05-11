@@ -1,15 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  LABELS,
   WIKI_PAGES,
-  type RawEvent,
-  type Source,
   type WikiPage,
 } from "./data";
 import {
-  labelTypedText,
   showcaseProgress,
-  useTimelineDriver,
   type DemoState,
 } from "./driver";
 import "./memex.css";
@@ -17,6 +12,23 @@ import "./memex.css";
 const GH_REPO = "GeneralUserModels/tada";
 const GH_URL = `https://github.com/${GH_REPO}`;
 const RELEASES_PAGE = `${GH_URL}/releases/latest`;
+const MEMEX_REVEAL_ORDER = [
+  "people/dorothy-gale",
+  "people/aunt-em",
+  "people/toto",
+  "interests/journaling",
+  "projects/get-home-to-kansas",
+  "people/scarecrow",
+  "people/tin-man",
+  "people/cowardly-lion",
+  "people/glinda",
+  "interests/farm-life",
+  "people/uncle-henry",
+  "people/wizard-of-oz",
+  "people/wicked-witch-of-the-west",
+  "people/zeke",
+].filter((slug) => WIKI_PAGES[slug]);
+const REVEAL_INTERVAL_MS = 1700;
 
 function useDmgUrl(): string {
   const [url, setUrl] = useState(RELEASES_PAGE);
@@ -47,77 +59,90 @@ function useDmgUrl(): string {
   return url;
 }
 
-const SOURCE_META: Record<
-  Source,
-  { name: string; glyph: string }
-> = {
-  screen:   { name: "screen",       glyph: "◱" },
-  email:    { name: "email",        glyph: "✉" },
-  calendar: { name: "calendar",     glyph: "▦" },
-  notif:    { name: "notifications",glyph: "◉" },
-  filesys:  { name: "filesystem",   glyph: "≡" },
-};
-
-const SOURCE_ORDER: Source[] = ["screen", "email", "calendar", "notif", "filesys"];
-
 // ─────────────────────────────────────────────────────────────
 // Root
 // ─────────────────────────────────────────────────────────────
 
-export function MemexDemo() {
-  const [interactive, setInteractive] = useState(false);
-  const [selectedSlug, setSelectedSlug] = useState<string>("people/scarecrow");
-  const state = useTimelineDriver(interactive, selectedSlug);
+export function MemexDemo({ topNav }: { topNav?: React.ReactNode }) {
+  const [selectedSlug, setSelectedSlug] = useState<string>("people/dorothy-gale");
+  const [visibleCount, setVisibleCount] = useState(1);
   const dmgUrl = useDmgUrl();
 
   const openPage = useCallback((slug: string) => {
     if (!WIKI_PAGES[slug]) return;
+    const revealIdx = MEMEX_REVEAL_ORDER.indexOf(slug);
+    if (revealIdx >= 0) {
+      setVisibleCount((count) => Math.max(count, revealIdx + 1));
+    }
     setSelectedSlug(slug);
-    setInteractive(true);
   }, []);
 
-  // When the timeline reaches its end, the driver emits `browseRequested`.
-  // Flip interactive mode on so the demo settles into the browsable wiki
-  // instead of looping back to an empty start.
   useEffect(() => {
-    if (state.browseRequested && !interactive) setInteractive(true);
-  }, [state.browseRequested, interactive]);
+    const timer = window.setInterval(() => {
+      setVisibleCount((count) => {
+        if (count >= MEMEX_REVEAL_ORDER.length) return count;
+        return count + 1;
+      });
+    }, REVEAL_INTERVAL_MS);
+
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const state = useMemo<DemoState>(() => {
+    const createdPages = MEMEX_REVEAL_ORDER.slice(0, visibleCount);
+    const showcasedSlug = createdPages.includes(selectedSlug)
+      ? selectedSlug
+      : "people/dorothy-gale";
+
+    return {
+      phase: "browse",
+      elapsed: visibleCount * REVEAL_INTERVAL_MS,
+      rawEventsBySource: {
+        screen: [],
+        email: [],
+        calendar: [],
+        notif: [],
+        filesys: [],
+      },
+      activeLabel: null,
+      completedLabelIds: new Set(),
+      createdPages,
+      showcasedSlug,
+      showcaseStartedAt: -1e9,
+      showUpdated: true,
+      showUnknown: true,
+      browseRequested: true,
+    };
+  }, [selectedSlug, visibleCount]);
 
   return (
     <div className="memex-root">
       <div className="memex-grain" aria-hidden="true" />
+      {topNav}
 
-      <MemexHero
-        dmgUrl={dmgUrl}
-        interactive={interactive}
-        onBrowse={() => setInteractive(true)}
-        onExit={() => setInteractive(false)}
-      />
+      <MemexHero dmgUrl={dmgUrl} />
 
       <div
         className="memex-stage"
-        data-phase={interactive ? "browse" : state.phase}
-        data-interactive={interactive || undefined}
+        data-phase="browse"
+        data-interactive="true"
       >
         <div className="memex-canvas">
           <Titlebar
             elapsed={state.elapsed}
             phase={state.phase}
-            interactive={interactive}
+            interactive
           />
           <div className="memex-body">
-            <LeftPanel state={state} onLinkClick={openPage} />
             <RightPanel
               state={state}
-              interactive={interactive}
+              interactive
               onSelect={openPage}
             />
           </div>
-          {state.phase === "twister" && !interactive && <TwisterOverlay />}
         </div>
       </div>
 
-      <MemexFooter />
     </div>
   );
 }
@@ -128,32 +153,25 @@ export function MemexDemo() {
 
 function MemexHero({
   dmgUrl,
-  interactive,
-  onBrowse,
-  onExit,
 }: {
   dmgUrl: string;
-  interactive: boolean;
-  onBrowse: () => void;
-  onExit: () => void;
 }) {
   return (
-    <header className="memex-hero">
-      <h1 className="memex-hero-title">
-        <MemexLogo />
+    <header className="hero product-hero memex-hero">
+      <h1 className="hero-title product-hero-title memex-hero-title">
         Memex
+        <MemexLogo />
       </h1>
-      <p className="memex-hero-subtitle">
+      <p className="hero-subtitle product-hero-subtitle memex-hero-subtitle">
         A wiki of your memories, built passively.
       </p>
-      <div className="memex-hero-actions">
-        <a className="memex-btn memex-btn-primary" href={dmgUrl}>
+      <div className="hero-actions">
+        <a className="btn btn-primary" href={dmgUrl}>
           <DownloadIcon />
-          <span>Download for macOS</span>
-          <span className="memex-btn-sub">(Apple Silicon)</span>
+          <span>Download for macOS (Apple Silicon)</span>
         </a>
         <a
-          className="memex-btn memex-btn-secondary"
+          className="btn btn-secondary"
           href={GH_URL}
           target="_blank"
           rel="noreferrer"
@@ -161,38 +179,8 @@ function MemexHero({
           <StarIcon />
           <span>Star on GitHub</span>
         </a>
-        {interactive ? (
-          <button
-            className="memex-btn memex-btn-ghost"
-            onClick={onExit}
-            type="button"
-          >
-            <span>← Back to the demo</span>
-          </button>
-        ) : (
-          <button
-            className="memex-btn memex-btn-accent"
-            onClick={onBrowse}
-            type="button"
-          >
-            <CursorIcon />
-            <span>Browse Dorothy's memex</span>
-          </button>
-        )}
       </div>
     </header>
-  );
-}
-
-function MemexFooter() {
-  return (
-    <footer className="memex-footer">
-      <a href={GH_URL} target="_blank" rel="noreferrer">
-        github.com/{GH_REPO}
-      </a>
-      <span>·</span>
-      <span>tada</span>
-    </footer>
   );
 }
 
@@ -200,7 +188,7 @@ function MemexLogo() {
   // Pulled from src/client/renderer/components/Sidebar.tsx (the sidebar nav icon).
   return (
     <svg
-      className="memex-hero-logo"
+      className="memex-hero-logo product-hero-icon"
       viewBox="0 0 16 16"
       fill="none"
       aria-hidden="true"
@@ -236,15 +224,6 @@ function StarIcon() {
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
       strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
       <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
-    </svg>
-  );
-}
-
-function CursorIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-      strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <path d="M4 4l16 6-7 3-3 7z" />
     </svg>
   );
 }
@@ -302,104 +281,6 @@ function formatTimecode(elapsed: number): string {
 // ─────────────────────────────────────────────────────────────
 // Title overlay (first 2.5s)
 // ─────────────────────────────────────────────────────────────
-
-// ─────────────────────────────────────────────────────────────
-// Left panel — source lanes + label synth
-// ─────────────────────────────────────────────────────────────
-
-function LeftPanel({
-  state,
-  onLinkClick,
-}: {
-  state: DemoState;
-  onLinkClick: (slug: string) => void;
-}) {
-  const active = labelTypedText(state.activeLabel, state.elapsed);
-  const activeLabelMeta = state.activeLabel
-    ? LABELS.find((l) => l.id === state.activeLabel!.id) ?? null
-    : null;
-
-  return (
-    <div className="memex-left">
-      <div className="memex-lanes">
-        {SOURCE_ORDER.map((src) => (
-          <SourceLane
-            key={src}
-            source={src}
-            events={state.rawEventsBySource[src] ?? []}
-          />
-        ))}
-      </div>
-      <div className="memex-label-synth">
-        <div className="memex-label-synth-header">
-          <span className="synth-dot" />
-          <span className="synth-model">Passive labeling</span>
-          <span className="synth-sep">·</span>
-          <span className="synth-label">
-            describing each observed action, in natural language
-          </span>
-        </div>
-        <div className="memex-label-synth-body">
-          {active ? (
-            <>
-              <span className="synth-text">{active.text}</span>
-              {!active.done && <span className="synth-cursor" />}
-            </>
-          ) : (
-            <span className="synth-placeholder">waiting for signal…</span>
-          )}
-        </div>
-        <div className="memex-label-synth-target">
-          {activeLabelMeta?.pages.map((slug) => (
-            <WikilinkChip key={slug} slug={slug} small onClick={onLinkClick} />
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function WikilinkChip({
-  slug,
-  small,
-  onClick,
-}: {
-  slug: string;
-  small?: boolean;
-  onClick: (slug: string) => void;
-}) {
-  return (
-    <button
-      type="button"
-      className={`wikilink${small ? " wikilink-sm" : ""}`}
-      onClick={() => onClick(slug)}
-    >
-      [[{slug}]]
-    </button>
-  );
-}
-
-function SourceLane({ source, events }: { source: Source; events: RawEvent[] }) {
-  const meta = SOURCE_META[source];
-  return (
-    <div className="lane" data-source={source}>
-      <div className="lane-header">
-        <span className="lane-glyph">{meta.glyph}</span>
-        <span className="lane-name">{meta.name}</span>
-        <span className="lane-count">{events.length}</span>
-      </div>
-      <div className="lane-chips">
-        {events.length === 0 && <div className="lane-empty">—</div>}
-        {events.map((e, idx) => (
-          <div className="lane-chip" key={e.id} data-idx={idx}>
-            <span className="chip-ts">{e.ts}</span>
-            <span className="chip-text">{e.text}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
 
 // ─────────────────────────────────────────────────────────────
 // Right panel — wiki
@@ -508,6 +389,8 @@ function FileTree({
     "interests",
     "work",
   ];
+  const newestSlug =
+    createdPages.length > 1 ? createdPages[createdPages.length - 1] : null;
 
   return (
     <div className="file-tree">
@@ -526,7 +409,8 @@ function FileTree({
                 const page = WIKI_PAGES[slug];
                 const name = slug.slice(dir.length + 1) + ".md";
                 const active = slug === showcasedSlug;
-                const className = `ft-file${active ? " ft-file-active" : ""}${interactive ? " ft-file-clickable" : ""}`;
+                const isNew = slug === newestSlug;
+                const className = `ft-file${active ? " ft-file-active" : ""}${interactive ? " ft-file-clickable" : ""}${isNew ? " ft-file-new" : ""}`;
                 const inner = (
                   <>
                     <span className="ft-file-name">{name}</span>
@@ -774,4 +658,3 @@ function TwisterOverlay() {
     </div>
   );
 }
-
