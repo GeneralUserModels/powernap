@@ -2,11 +2,12 @@ import path from "node:path";
 import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 
-function redirectSlashlessSiteRoutes(): Plugin {
-  const routes = new Set(["/tada", "/tada/tabra", "/tada/memex"]);
+function redirectSiteRoutes(): Plugin {
+  const slashlessRoutes = new Set(["/tada", "/tada/tabracadabra", "/tada/memex"]);
+  const retiredRoutes = new Set(["/tada/tabra", "/tada/tabra/"]);
 
   return {
-    name: "redirect-slashless-site-routes",
+    name: "redirect-site-routes",
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
         if (!req.url) {
@@ -15,7 +16,13 @@ function redirectSlashlessSiteRoutes(): Plugin {
         }
 
         const url = new URL(req.url, "http://localhost");
-        if (!routes.has(url.pathname)) {
+        if (retiredRoutes.has(url.pathname)) {
+          res.statusCode = 404;
+          res.end("Not found");
+          return;
+        }
+
+        if (!slashlessRoutes.has(url.pathname)) {
           next();
           return;
         }
@@ -30,13 +37,13 @@ function redirectSlashlessSiteRoutes(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [redirectSlashlessSiteRoutes(), react()],
+  plugins: [redirectSiteRoutes(), react()],
   base: "/tada/",
   build: {
     rollupOptions: {
       input: {
         main: path.resolve(__dirname, "index.html"),
-        tabra: path.resolve(__dirname, "tabra/index.html"),
+        tabracadabra: path.resolve(__dirname, "tabracadabra/index.html"),
         memex: path.resolve(__dirname, "memex/index.html"),
       },
     },

@@ -208,10 +208,6 @@ body {
   transition: transform 0.18s, background 0.18s, border-color 0.18s;
 }
 
-.tada-paper-card:nth-child(n + 4) {
-  grid-column: span 3;
-}
-
 .tada-paper-card:hover {
   transform: translateY(-2px);
   background: rgba(255, 255, 255, 0.86);
@@ -952,8 +948,7 @@ body {
     grid-template-columns: 1fr;
   }
 
-  .tada-paper-card,
-  .tada-paper-card:nth-child(n + 4) {
+  .tada-paper-card {
     grid-column: auto;
   }
 

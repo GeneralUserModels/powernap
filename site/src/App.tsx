@@ -7,7 +7,7 @@ const RELEASES_PAGE = `https://github.com/${REPO}/releases/latest`;
 const SITE_BASE = "/tada/";
 const ROUTES = {
   home: SITE_BASE,
-  tabra: `${SITE_BASE}tabra/`,
+  tabracadabra: `${SITE_BASE}tabracadabra/`,
   memex: `${SITE_BASE}memex/`,
 };
 
@@ -28,14 +28,19 @@ const RESEARCH_PAPERS = [
     url: "https://arxiv.org/abs/2510.14591",
   },
   {
-    title: "Learning to Simulate Human Dialogue",
-    source: "arXiv 2026",
-    url: "https://arxiv.org/abs/2601.04436",
-  },
-  {
     title: "Behavior Latticing: Inferring User Motivations from Unstructured Interactions",
     source: "arXiv 2026",
     url: "https://arxiv.org/abs/2604.07629",
+  },
+  {
+    title: "\"What Are You Really Trying to Do?\": Co-Creating Life Goals from Everyday Computer Use",
+    source: "arXiv 2026",
+    url: "https://arxiv.org/abs/2605.00497",
+  },
+  {
+    title: "Learning to Simulate Human Dialogue",
+    source: "arXiv 2026",
+    url: "https://arxiv.org/abs/2601.04436",
   },
 ];
 
@@ -385,22 +390,22 @@ export function App() {
   const route = routeFromLocation(pathname, search);
 
   if (route === "memex") return <MemexDemo topNav={<SiteNav active="memex" />} />;
-  if (route === "tabra") return <TabracadabraPage />;
+  if (route === "tabracadabra") return <TabracadabraPage />;
   return <TadaHomePage />;
 }
 
 function routeFromLocation(pathname: string, search: string) {
   const demo = new URLSearchParams(search).get("demo");
   if (demo === "memex") return "memex";
-  if (demo === "tabra" || demo === "tabracadabra") return "tabra";
+  if (demo === "tabracadabra") return "tabracadabra";
 
   const path = pathname.replace(/\/+$/, "");
   if (path.endsWith("/memex")) return "memex";
-  if (path.endsWith("/tabra") || path.endsWith("/tabracadabra")) return "tabra";
+  if (path.endsWith("/tabracadabra")) return "tabracadabra";
   return "home";
 }
 
-function SiteNav({ active }: { active: "home" | "tabra" | "memex" }) {
+function SiteNav({ active }: { active: "home" | "tabracadabra" | "memex" }) {
   return (
     <header className="site-nav">
       <a className="site-brand" href={ROUTES.home} aria-label="Tada home">
@@ -409,10 +414,10 @@ function SiteNav({ active }: { active: "home" | "tabra" | "memex" }) {
       </a>
       <nav className="site-nav-links" aria-label="Site">
         <a
-          className={active === "tabra" ? "active" : ""}
-          href={ROUTES.tabra}
+          className={active === "tabracadabra" ? "active" : ""}
+          href={ROUTES.tabracadabra}
         >
-          Tabra
+          Tabracadabra
         </a>
         <a
           className={active === "memex" ? "active" : ""}
@@ -477,7 +482,7 @@ function TadaHomePage() {
         </p>
 
         <div className="tada-product-grid">
-          <a className="tada-product-card tada-product-card--tabra" href={ROUTES.tabra}>
+          <a className="tada-product-card tada-product-card--tabra" href={ROUTES.tabracadabra}>
             <div className="tada-product-visual" aria-hidden="true">
               <span className="visual-line visual-line--long" />
               <span className="visual-line" />
@@ -620,7 +625,7 @@ function TabracadabraPage() {
   return (
     <div className="page">
       <div className="grain" />
-      <SiteNav active="tabra" />
+      <SiteNav active="tabracadabra" />
 
       <main className="hero product-hero">
         <h1 className="hero-title product-hero-title">

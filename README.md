@@ -68,19 +68,6 @@ Tada 🎉 builds on research across a few academic papers. If you're interested,
 </details>
 
 <details>
-<summary><a href="https://arxiv.org/abs/2601.04436">Learning to Simulate Human Dialogue</a></summary>
-
-```bibtex
-@article{gandhi2026learning,
-  title={Learning to Simulate Human Dialogue},
-  author={Gandhi, Kanishk and Bhatia, Agam and Goodman, Noah D},
-  journal={arXiv preprint arXiv:2601.04436},
-  year={2026}
-}
-```
-</details>
-
-<details>
 <summary><a href="https://arxiv.org/abs/2604.07629">Behavior Latticing: Inferring User Motivations from Unstructured Interactions
 </a></summary>
 
@@ -89,6 +76,35 @@ Tada 🎉 builds on research across a few academic papers. If you're interested,
   title={Behavior Latticing: Inferring User Motivations from Unstructured Interactions},
   author={Zhao, Dora and Lam, Michelle S and Yang, Diyi and Bernstein, Michael S},
   journal={arXiv preprint arXiv:2604.07629},
+  year={2026}
+}
+```
+</details>
+
+<details>
+<summary><a href="https://arxiv.org/abs/2605.00497">"What Are You Really Trying to Do?": Co-Creating Life Goals from Everyday Computer Use</a></summary>
+
+```bibtex
+@misc{sapkota2026whatreallytryingdo,
+      title={"What Are You Really Trying to Do?": Co-Creating Life Goals from Everyday Computer Use}, 
+      author={Shardul Sapkota and Matthew Jörke and Zane Sabbagh and Omar Shaikh and Grace Wang and James A. Landay},
+      year={2026},
+      eprint={2605.00497},
+      archivePrefix={arXiv},
+      primaryClass={cs.HC},
+      url={https://arxiv.org/abs/2605.00497}, 
+}
+```
+</details>
+
+<details>
+<summary><a href="https://arxiv.org/abs/2601.04436">Learning to Simulate Human Dialogue</a></summary>
+
+```bibtex
+@article{gandhi2026learning,
+  title={Learning to Simulate Human Dialogue},
+  author={Gandhi, Kanishk and Bhatia, Agam and Goodman, Noah D},
+  journal={arXiv preprint arXiv:2601.04436},
   year={2026}
 }
 ```
