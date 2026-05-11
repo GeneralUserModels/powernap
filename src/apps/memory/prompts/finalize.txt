@@ -3,9 +3,68 @@ Current date and time: **{now}**
 Mode: `{mode}`
 Today: `{today}`
 
-{finalize_rules}
+## Rules
 
-{shared_wiki_rules}
+Output catalog, log, schema, and validation repairs only.
+
+Allowed work:
+- Repair listed validation issues.
+- Update `index.md` so every content page is represented by title or path with a one-line description.
+- Append the required dated entry to `log.md`.
+- Make minimal schema/convention repairs if validation requires it.
+- Create minimal grounded stub pages only when required to resolve validation issues caused by new wiki-links.
+- Delete superseded original content pages after splits/moves when the page is now only a redirect, tombstone, "(moved)" note, duplicate shell, or otherwise contains no unique useful memory after replacement pages have been created.
+
+Not allowed:
+- Do not start new source analysis.
+- Do not crawl directories with `find`, `ls -R`, broad `rg`, or equivalent discovery commands.
+- Do not list or read content pages just to build `index.md`; use the provided page metadata.
+- Do not use shell redirection, append operators, heredocs, or temp-file shell tricks to edit files.
+- Do not call `write_file` or `edit_file`; the harness will apply the final result.
+- Do not create unrelated new content pages.
+- Do not create normal content pages unless they directly repair listed validation issues.
+- Do not substantially rewrite content pages unless required to repair listed validation issues.
+- Do not write wiki-links to special files. Refer to `index.md`, `log.md`, and `schema.md` as code paths.
+- Do not delete `index.md`, `log.md`, `schema.md`, hidden files, archived files, or any content page that still contains unique grounded memory not represented elsewhere.
+
+Execution guidance:
+- If you need existing `index.md` and `log.md` content, read them together once.
+- Return full replacement markdown for `index.md`, `log.md`, any page that must be repaired, and any minimal validation stub that must be created.
+- Mark superseded original pages for deletion when they should disappear from Memex after a move/split. Also remove those pages from `index.md` and mention the deletion in `log.md`.
+- Planning is optional. Keep it compact, and do not spend extra rounds on checklist bookkeeping.
+- You do not need to re-read `index.md` or `log.md` solely to verify your own writes; Python validates the wiki after finalize.
+
+## Wiki Rules
+
+You are maintaining the personal memory wiki at `{memory_dir}/`.
+
+The wiki is both a database of facts and a source of insight. Record what is supported by evidence, then explain why it matters: relationships, work patterns, project momentum, preferences, goals, and changes over time.
+
+Focus on work first: research, projects, collaborators, ideas, code, writing, meetings, deadlines, and recurring workflows. Personal details are useful when supported, but professional context should dominate.
+
+All normal wiki pages must be markdown files with YAML frontmatter:
+
+```yaml
+---
+title: <Page Title>
+category: <people|projects|work|interests|life|notes>
+confidence: <0.0-1.0>
+last_updated: <YYYY-MM-DD>
+---
+```
+
+Choose a stable category for every content page. Use `people` for collaborators, friends, family, teams, organizations, and relationship pages; `projects` for active goals, workstreams, codebases, launches, research efforts, and plans; `work` for professional patterns, workflows, decisions, responsibilities, and operating context; `interests` for durable topics, tools, hobbies, research themes, and learning areas; `life` for personal context, routines, places, logistics, habits, and non-work commitments; and `notes` only when the page is useful but does not yet fit a stronger category.
+
+Use inline claim confidence scores like `[c:0.7]` on meaningful claims and inferences. Adjust confidence when new evidence reinforces, weakens, or contradicts old claims.
+
+Use `[[wiki-links]]` for cross-references. Do not duplicate substantial content across pages when a link would work.
+
+Special files:
+- `index.md`: master catalog of wiki pages with short descriptions.
+- `log.md`: append-only dated operations log.
+- `schema.md`: conventions document.
+
+Do not delete existing wiki pages during normal page updates. Update, split, or lower confidence instead. If a page has lost topical coherence, split it into focused sub-pages; only the finalize pass may delete the original page, and only when it is now a pure redirect/tombstone like "(moved)" or all useful content has been carried into replacement pages.
 
 ## Inventory Plan
 
@@ -44,5 +103,3 @@ Do all of the following:
 Use the provided page metadata to update `index.md` and `log.md`. Do not list or read content pages just to build catalog entries.
 
 Do not write files directly. Python will apply the returned operations after validating paths.
-
-When finished, return the finalize pass result. The structured response schema enforces `create_pages`, `update_pages`, `delete_pages`, `path`, `markdown`, and `notes`.

@@ -19,8 +19,6 @@ from apps.moments.schemas.structured import TriggerPayload
 
 _PROMPTS = Path(__file__).resolve().parent.parent / "prompts"
 INSTRUCTION_TEMPLATE = (_PROMPTS / "triggers.txt").read_text()
-TRIGGER_RULES = (_PROMPTS / "rules" / "triggers.txt").read_text()
-SHARED_SOURCES = (_PROMPTS / "shared" / "sources.txt").read_text()
 
 
 def _parse_fired_slugs(result: str) -> list[str]:
@@ -64,8 +62,6 @@ def run(
             now=now,
             logs_dir=logs_dir,
             triggered_tasks_list=listing,
-            trigger_rules=TRIGGER_RULES,
-            shared_sources=SHARED_SOURCES.format(logs_dir=logs_dir),
         )
     )
 

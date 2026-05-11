@@ -3,13 +3,16 @@
 Registered by server/app.py under /api/connectors.
 """
 
+from __future__ import annotations
+
 import asyncio
 import json
 import logging
+from collections import deque
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel
 
 from server.feature_flags import is_enabled
@@ -17,6 +20,9 @@ from server.feature_flags import is_enabled
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/connectors", tags=["connectors"])
+LABEL_HISTORY_DEFAULT_LIMIT = 50
+LABEL_HISTORY_MAX_LIMIT = 500
+LABEL_HISTORY_TAIL_CHUNK_BYTES = 64 * 1024
 
 # Virtual audio connector names — map to the single "audio" backend connector
 _AUDIO_VIRTUAL = {"microphone", "system_audio"}
@@ -172,18 +178,63 @@ async def update_connector(name: str, update: ConnectorUpdate, request: Request)
     return {"ok": True, "name": name, "enabled": update.enabled}
 
 
-@router.get("/label-history")
-async def get_label_history(request: Request, limit: int = 50):
-    log_dir = Path(request.app.state.server.config.log_dir)
+def _tail_lines(path: Path, max_lines: int) -> list[str]:
+    """Return up to max_lines complete lines from the end of a text file."""
+    if max_lines <= 0:
+        return []
+
+    with path.open("rb") as f:
+        f.seek(0, 2)
+        position = f.tell()
+        chunks: deque[bytes] = deque()
+        newline_count = 0
+
+        while position > 0 and newline_count <= max_lines:
+            read_size = min(LABEL_HISTORY_TAIL_CHUNK_BYTES, position)
+            position -= read_size
+            f.seek(position)
+            chunk = f.read(read_size)
+            chunks.appendleft(chunk)
+            newline_count += chunk.count(b"\n")
+
+    data = b"".join(chunks)
+    if not data:
+        return []
+
+    lines = data.splitlines()
+    if position > 0 and lines:
+        lines = lines[1:]
+    return [line.decode("utf-8", errors="replace") for line in lines[-max_lines:]]
+
+
+def _load_label_history(log_dir: Path, limit: int) -> list[dict]:
     entries = []
     for jsonl_path in log_dir.glob("*/filtered.jsonl"):
-        for line in jsonl_path.read_text().splitlines():
-            entry = json.loads(line)
-            text = entry["text"] if entry.get("prediction_event") else f"[{entry.get('source_name', '')}] {entry['text']}"
-            entries.append({
-                "text": text,
-                "timestamp": entry["timestamp"],
-                "dense_caption": entry.get("dense_caption", "") or "",
-            })
+        for line in _tail_lines(jsonl_path, limit):
+            if not line.strip():
+                continue
+            try:
+                entry = json.loads(line)
+                text = (
+                    entry["text"]
+                    if entry.get("prediction_event")
+                    else f"[{entry.get('source_name', '')}] {entry['text']}"
+                )
+                entries.append({
+                    "text": text,
+                    "timestamp": entry["timestamp"],
+                    "dense_caption": entry.get("dense_caption", "") or "",
+                })
+            except (json.JSONDecodeError, KeyError, TypeError):
+                logger.debug("Skipping malformed label-history row in %s", jsonl_path, exc_info=True)
     entries.sort(key=lambda e: e["timestamp"])
     return entries[-limit:]
+
+
+@router.get("/label-history")
+async def get_label_history(
+    request: Request,
+    limit: int = Query(default=LABEL_HISTORY_DEFAULT_LIMIT, ge=1, le=LABEL_HISTORY_MAX_LIMIT),
+):
+    log_dir = Path(request.app.state.server.config.log_dir)
+    return await asyncio.to_thread(_load_label_history, log_dir, limit)

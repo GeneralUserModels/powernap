@@ -15,7 +15,7 @@ load_dotenv()
 
 from apps.common.structured_completion import structured_completion
 from apps.common.structured_ops import StructuredOpsError
-from apps.moments.core.incremental import read_checkpoint, write_checkpoint
+from apps.moments.core.incremental import write_checkpoint
 from apps.moments.core.candidates import (
     CandidateError,
     MomentCandidate,
@@ -30,10 +30,6 @@ from apps.moments.schemas.structured import PromotionPayload
 
 _PROMPTS = Path(__file__).resolve().parent.parent / "prompts"
 PROMOTE_TEMPLATE = (_PROMPTS / "promote.txt").read_text()
-PROMOTE_RULES = (_PROMPTS / "rules" / "promote.txt").read_text()
-SHARED_MOMENTS = (_PROMPTS / "shared" / "moments.txt").read_text()
-SHARED_EXECUTOR_CAPABILITIES = (_PROMPTS / "shared" / "executor_capabilities.txt").read_text()
-SHARED_QUALITY_BAR = (_PROMPTS / "shared" / "quality_bar.txt").read_text()
 STRUCTURED_OUTPUT_ATTEMPTS = 2
 logger = logging.getLogger(__name__)
 
@@ -103,19 +99,16 @@ def run(
     api_key: str | None = None,
     subagent_model: str | None = None,
     subagent_api_key: str | None = None,
+    write_run_checkpoint: bool = True,
 ) -> str:
     logs_path = Path(logs_dir).resolve()
     tada_path = logs_path.parent / "logs-tada"
     state_dir = discovery_state_dir(tada_path)
-    checkpoint_path = state_dir / ".last_promotion"
     tada_path.mkdir(parents=True, exist_ok=True)
     state_dir.mkdir(parents=True, exist_ok=True)
     candidate_path = latest_candidate_file(tada_path)
     if candidate_path is None:
         return "no candidate files to promote"
-    last_promotion = read_checkpoint(checkpoint_path)
-    if last_promotion is not None and datetime.fromtimestamp(candidate_path.stat().st_mtime) <= last_promotion:
-        return "no new candidate files to promote"
     candidates = read_candidate_jsonl(candidate_path)
     candidates, routed_updates = _route_existing_slug_updates(tada_path, candidates)
 
@@ -123,10 +116,7 @@ def run(
     candidate_json = json.dumps([c.to_json() for c in candidates], indent=2)
     instruction = PROMOTE_TEMPLATE.format(
         now=now,
-        promote_rules=PROMOTE_RULES,
-        shared_executor_capabilities=SHARED_EXECUTOR_CAPABILITIES,
-        shared_quality_bar=SHARED_QUALITY_BAR,
-        shared_moments=SHARED_MOMENTS.format(tada_dir=str(tada_path)),
+        tada_dir=str(tada_path),
         accepted_moments=summarize_tada_tasks(tada_path),
         feedback_state_summary=_feedback_state_summary(tada_path),
         candidate_json=candidate_json,
@@ -141,8 +131,8 @@ def run(
     promoted = ranked[:n] if n > 0 else ranked
     for candidate in promoted:
         write_accepted_moment(tada_path, candidate)
-
-    write_checkpoint(checkpoint_path)
+    if write_run_checkpoint:
+        write_checkpoint(tada_path / ".last_run")
 
     summary = f"{result}\n\nRanked {len(ranked)} of {len(candidates)} candidates. Promoted top {len(promoted)} from {candidate_path}"
     if routed_updates:

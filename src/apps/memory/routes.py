@@ -159,7 +159,7 @@ async def delete_page(page_path: str, request: Request):
 
 @router.get("/status")
 async def get_status(request: Request):
-    """Return wiki status: last ingest/lint times and page count."""
+    """Return wiki status: last feature run time and page count."""
     memory_dir = _get_memory_dir(request)
 
     def _read_ts(p: Path) -> str | None:
@@ -179,7 +179,6 @@ async def get_status(request: Request):
 
     return {
         "exists": memory_dir.exists(),
-        "last_ingest": _read_ts(memory_dir / ".last_ingest"),
-        "last_lint": _read_ts(memory_dir / ".last_lint"),
+        "last_run": _read_ts(memory_dir / ".last_run"),
         "page_count": page_count,
     }

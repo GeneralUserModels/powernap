@@ -48,6 +48,18 @@ def _validate_raw_response(raw: Any, response_model: type[T]) -> tuple[str, T] |
     return None
 
 
+def pydantic_response_format(response_model: type[BaseModel]) -> dict[str, Any]:
+    """Build a LiteLLM `response_format` from a Pydantic model."""
+    return {
+        "type": "json_schema",
+        "json_schema": {
+            "name": response_model.__name__,
+            "strict": True,
+            "schema": response_model.model_json_schema(),
+        },
+    }
+
+
 def structured_completion(
     *,
     model: str,
@@ -66,8 +78,8 @@ def structured_completion(
         "metadata": {"app": metadata_app},
     }
     kwargs.update({
-        "response_format": response_model,
-        "enable_json_schema_validation": False,
+        "response_format": pydantic_response_format(response_model),
+        "enable_json_schema_validation": True,
     })
     try:
         response = _litellm_structured_completion(**kwargs)

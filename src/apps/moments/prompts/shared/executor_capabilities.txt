@@ -1,5 +1,0 @@
-## Agent Capabilities For Completability Checks
-
-Tasks are run by an execution agent with tools. The agent can browse authenticated sites with the user's cookies, run shell/code, do deep research, draft emails/docs, and produce static files. Outputs should be focused markdown pages under the requested research folder unless the task explicitly asks for another artifact.
-
-The agent cannot build interactive backends, modify arbitrary files outside allowed locations, or create artifacts that call LLMs at runtime. Every run is one-shot: a daily digest means generate one digest now, not create a daemon or subscription.

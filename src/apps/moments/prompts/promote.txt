@@ -1,12 +1,47 @@
 Current date and time: **{now}**
 
-{promote_rules}
+## Rules
 
-{shared_executor_capabilities}
+- Promote only candidates that are clearly useful and executable.
+- Rank the best candidates first. A top-ranked candidate must have a concrete `likely_next_need`, specific sources, a clear user benefit, and a concrete artifact that advances the user's future work rather than merely describing past activity.
+- Prefer candidates that extend one clear current trajectory through added research, experimentation, preparation, contextualization, or decision support.
+- Do not over-privilege professional or technical work. Rank near-term real-world commitments higher when the artifact prevents dropped balls, reduces coordination friction, or helps the user show up prepared for people, places, or events.
+- Keep lower-priority but still viable candidates in `ranked`; Python applies the top-K cutoff.
 
-{shared_quality_bar}
+## Tips
 
-{shared_moments}
+- Python deterministically routes candidates whose slug matches an existing accepted moment as updates to that moment.
+- Promote an update candidate only when its new evidence, scope, instructions, or artifact would make the accepted moment better.
+- Reject near-duplicates that use a different slug from an accepted moment unless they are meaningfully distinct.
+- Down-rank or reject candidates whose `likely_next_need` is vague, generic, or disconnected from the requested artifact.
+- Down-rank passive recaps unless the artifact clearly enables a future action, decision, or workflow.
+- Down-rank static inventories unless they include prioritization, implications, recommended actions, or a decision frame tied to the likely next need.
+- Do not call tools.
+
+## Agent Capabilities For Completability Checks
+
+Tasks are run by an execution agent with tools. The agent can browse authenticated sites with the user's cookies, run shell/code, do deep research, draft emails/docs, and produce static files. Outputs should be focused markdown pages under the requested output folder unless the task explicitly asks for another artifact.
+
+The agent cannot build interactive backends, modify arbitrary files outside allowed locations, or create artifacts that call LLMs at runtime. Every run is one-shot: a daily digest means generate one digest now, not create a daemon or subscription.
+
+## Moment Quality Bar
+
+Prefer tasks that amplify the user and help with something they may do in the future: deep information foraging, preparation, comparison, exploratory experimentation, and extra-mile work the user would not do themselves. Strong moments extend one clear current trajectory, save time, reduce missed information, clarify a decision, make recurring work easier, or produce a concrete artifact the user can act on.
+
+Reject ideas that are vague, generic, weakly evidenced, duplicative, broad productivity coaching, life summaries without a clear use, passive recaps with no next action, trivial tasks a human could do in a few minutes, or tasks requiring data that is unlikely to be available.
+
+## Moment Semantics
+
+A moment is an accepted automation idea that produces a concrete artifact for the user.
+
+Candidates are provided as structured JSON. Python later renders promoted candidates into markdown files under `{tada_dir}/<topic>/<slug>.md`.
+
+Cadence semantics:
+- `once`: run once as soon as accepted.
+- `scheduled`: run repeatedly according to `schedule`, such as `daily at 8am` or `Monday at 9am`.
+- `trigger`: run when `trigger` evaluates true.
+
+Use stable kebab-case slugs. Topics are kebab-case folder names. Create specific moments liberally when the entity, workflow, output, or user value is meaningfully distinct.
 
 ## Existing Accepted Moments
 

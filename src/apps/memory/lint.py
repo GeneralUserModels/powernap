@@ -11,7 +11,6 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from agent.builder import build_agent
-from apps.moments.core.incremental import read_checkpoint, write_checkpoint
 
 
 LINT_TEMPLATE = (Path(__file__).parent / "prompts" / "lint.txt").read_text()
@@ -31,8 +30,6 @@ def run(
     if not memory_dir.exists():
         return "Wiki directory does not exist yet. Run ingest first."
 
-    checkpoint_path = memory_dir / ".last_lint"
-
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
     instruction = f"Current date and time: **{now}**\n\n" + LINT_TEMPLATE.format(
         memory_dir=str(memory_dir),
@@ -45,8 +42,6 @@ def run(
     agent.max_rounds = 100
     agent.on_round = on_round
     result = agent.run([{"role": "user", "content": instruction}])
-
-    write_checkpoint(checkpoint_path)
 
     return result
 

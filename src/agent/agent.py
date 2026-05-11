@@ -11,12 +11,15 @@ import litellm
 from pydantic import BaseModel
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential_jitter
 
+from apps.common.structured_completion import pydantic_response_format
+
 from .tools.base_tool import BaseTool
 from .tools.compact import CompactTool
 from .tools.background import BackgroundManager
 from .tools.todo import PlanState, PlanWriteTool, PlanUpdateTool
 
 TOKEN_THRESHOLD = 128_000
+STRUCTURED_FINAL_MAX_TOKENS = 32000
 logger = logging.getLogger(__name__)
 
 
@@ -403,7 +406,7 @@ class Agent:
         metadata_app: str,
     ) -> dict:
         instruction = final_instruction or (
-            "Convert the prior agent work into the required structured final response. "
+            "Convert the prior agent work into the requested final result. "
             "Use only information from the conversation and tool results."
         )
         kwargs = dict(
@@ -413,9 +416,9 @@ class Agent:
                 *messages,
                 {"role": "user", "content": instruction},
             ],
-            response_format=response_model,
-            enable_json_schema_validation=False,
-            max_tokens=self.llm_max_tokens,
+            response_format=pydantic_response_format(response_model),
+            enable_json_schema_validation=True,
+            max_tokens=max(self.llm_max_tokens, STRUCTURED_FINAL_MAX_TOKENS),
             metadata={"app": metadata_app},
         )
         if self.api_key:

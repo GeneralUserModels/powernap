@@ -17,8 +17,7 @@ export interface WikiPage {
 
 export interface WikiStatus {
   exists: boolean;
-  last_ingest: string | null;
-  last_lint: string | null;
+  last_run: string | null;
   page_count: number;
 }
 

@@ -1,4 +1,4 @@
-"""Execute a moment task and persist markdown research pages."""
+"""Execute a moment task and persist markdown output pages."""
 
 from __future__ import annotations
 
@@ -16,11 +16,10 @@ from agent.builder import build_agent
 
 RESEARCH_WARNING_ROUND = 60
 RESEARCH_MAX_ROUNDS = 90
+OUTPUT_SUBDIR = "output"
 
 _PROMPTS = Path(__file__).resolve().parent.parent / "prompts"
-RESEARCH_INSTRUCTION_TEMPLATE = (_PROMPTS / "execute_research.txt").read_text()
-SHARED_SOURCES = (_PROMPTS / "shared" / "sources.txt").read_text()
-SHARED_EXECUTOR_CAPABILITIES = (_PROMPTS / "shared" / "executor_capabilities.txt").read_text()
+OUTPUT_INSTRUCTION_TEMPLATE = (_PROMPTS / "execute_research.txt").read_text()
 
 
 
@@ -71,18 +70,18 @@ def _cleanup_backup(backup_dir: str) -> None:
         shutil.rmtree(backup_dir)
 
 
-def _research_ready(research_dir: str) -> bool:
-    path = Path(research_dir)
+def _output_ready(output_pages_dir: str) -> bool:
+    path = Path(output_pages_dir)
     if not path.is_dir():
         return False
-    md_files = _research_pages(path)
+    md_files = _output_pages(path)
     return len(md_files) >= 2 and all(p.read_text().strip() for p in md_files)
 
 
-def _research_pages(research_dir: Path) -> list[Path]:
+def _output_pages(output_pages_dir: Path) -> list[Path]:
     return sorted(
-        p for p in research_dir.rglob("*.md")
-        if p.is_file() and not any(part.startswith(".") for part in p.relative_to(research_dir).parts)
+        p for p in output_pages_dir.rglob("*.md")
+        if p.is_file() and not any(part.startswith(".") for part in p.relative_to(output_pages_dir).parts)
     )
 
 
@@ -103,13 +102,13 @@ def _markdown_link_target(path: Path) -> str:
     return quote(path.as_posix(), safe="/#")
 
 
-def _ensure_index_page(research_dir: str, *, title: str, description: str) -> None:
+def _ensure_index_page(output_pages_dir: str, *, title: str, description: str) -> None:
     """Create a quick navigation index if the agent did not write one."""
-    root = Path(research_dir)
+    root = Path(output_pages_dir)
     index_path = root / "index.md"
     if index_path.exists():
         return
-    pages = [p for p in _research_pages(root) if p.name != "index.md"]
+    pages = [p for p in _output_pages(root) if p.name != "index.md"]
     lines = [f"# {title}", ""]
     if description:
         lines.extend([description, ""])
@@ -156,14 +155,14 @@ def run(
     subagent_model: str | None = None,
     subagent_api_key: str | None = None,
 ) -> bool:
-    """Execute a moment task. Returns True if markdown research pages were produced."""
+    """Execute a moment task. Returns True if markdown output pages were produced."""
     task_content = Path(task_path).read_text()
     fm = _parse_frontmatter(task_content)
     Path(output_dir).mkdir(parents=True, exist_ok=True)
 
     # Back up existing output so we can restore on failure
     backup_dir = str(Path(output_dir).parent / "_backups" / Path(output_dir).name)
-    had_previous = _research_ready(str(Path(output_dir) / "research"))
+    had_previous = _output_ready(str(Path(output_dir) / OUTPUT_SUBDIR))
     if had_previous:
         if Path(backup_dir).exists():
             shutil.rmtree(backup_dir)
@@ -199,34 +198,33 @@ def run(
         )
 
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
-    research_dir = str(Path(output_dir) / "research")
-    research_instruction = f"Current date and time: **{now}**\n\n" + RESEARCH_INSTRUCTION_TEMPLATE.format(
+    output_pages_dir = str(Path(output_dir) / OUTPUT_SUBDIR)
+    output_instruction = f"Current date and time: **{now}**\n\n" + OUTPUT_INSTRUCTION_TEMPLATE.format(
         task_content=task_content,
         cadence=effective_cadence,
         schedule=effective_schedule,
-        research_dir=research_dir,
-        shared_sources=SHARED_SOURCES.format(logs_dir=logs_dir),
-        shared_executor_capabilities=SHARED_EXECUTOR_CAPABILITIES,
+        output_dir=output_pages_dir,
+        logs_dir=logs_dir,
     ) + feedback_section
 
-    research_agent = _build_agent_for_stage(
+    output_agent = _build_agent_for_stage(
         model, logs_dir, output_dir, api_key, subagent_model, subagent_api_key,
         max_rounds=RESEARCH_MAX_ROUNDS, warning_round=RESEARCH_WARNING_ROUND, on_round=on_round,
     )
-    research_agent.run([{"role": "user", "content": research_instruction}])
+    output_agent.run([{"role": "user", "content": output_instruction}])
 
-    if not _research_ready(research_dir):
-        research_repair_instruction = research_instruction + (
+    if not _output_ready(output_pages_dir):
+        output_repair_instruction = output_instruction + (
             "\n\n## Required Repair\n\n"
-            f"The required research folder is not ready at `{research_dir}`. Your previous attempt did not "
+            f"The required output folder is not ready at `{output_pages_dir}`. Your previous attempt did not "
             "write the required markdown files. Do not plan, do not only create directories, and do not build "
             "the website. Use the `write_file` tool now to write at least two substantive non-empty markdown "
-            f"files inside `{research_dir}`, verify they exist, and then stop."
+            f"files inside `{output_pages_dir}`, verify they exist, and then stop."
         )
-        research_agent.run([{"role": "user", "content": research_repair_instruction}])
+        output_agent.run([{"role": "user", "content": output_repair_instruction}])
 
-    if not _research_ready(research_dir):
-        print("  [research] FAILED: research markdown files were not written")
+    if not _output_ready(output_pages_dir):
+        print("  [output] FAILED: output markdown files were not written")
         if had_previous:
             _restore_backup(backup_dir, output_dir)
             return True
@@ -234,7 +232,7 @@ def run(
         return False
 
     _ensure_index_page(
-        research_dir,
+        output_pages_dir,
         title=fm.get("title", Path(task_path).stem),
         description=fm.get("description", ""),
     )
