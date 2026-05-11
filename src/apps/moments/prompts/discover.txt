@@ -1,7 +1,7 @@
 Current date and time: **{now}**
 
 Mode: `{mode}`
-Last discovery checkpoint: **{last_discovery_date}**
+Last Tada run checkpoint: **{last_run_date}**
 Activity window starts after: **{activity_since_date}**
 
 ## Task

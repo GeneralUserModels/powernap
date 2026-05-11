@@ -46,7 +46,7 @@ DEFAULT_PAGE_AGENT_MAX_ROUNDS = 20
 @dataclass
 class IngestInputs:
     mode: str
-    last_ingest: datetime | None
+    last_run: datetime | None
     new_inputs_list: str
     active_conversations: list[Path]
     chats: list[Path]
@@ -187,15 +187,15 @@ def _section(label: str, items: list, formatter) -> str | None:
     return f"**{label}:**\n{body}"
 
 
-def _collect_ingest_inputs(logs_path: Path, last_ingest: datetime | None) -> IngestInputs:
+def _collect_ingest_inputs(logs_path: Path, last_run: datetime | None) -> IngestInputs:
     logs_dir = str(logs_path)
     tada_results = logs_path.parent / "logs-tada" / "results"
 
-    new_active_convos = _new_files_in(logs_path / "active-conversations", "conversation_*.md", last_ingest)
-    new_chats = _new_files_in(logs_path / "chats", "conversation.md", last_ingest)
-    new_audio = _new_files_in(logs_path / "audio", "*.md", last_ingest)
-    new_tada_feedback = _new_files_in(tada_results, "feedback_*.md", last_ingest)
-    modified_streams = _modified_sources(logs_dir, last_ingest)
+    new_active_convos = _new_files_in(logs_path / "active-conversations", "conversation_*.md", last_run)
+    new_chats = _new_files_in(logs_path / "chats", "conversation.md", last_run)
+    new_audio = _new_files_in(logs_path / "audio", "*.md", last_run)
+    new_tada_feedback = _new_files_in(tada_results, "feedback_*.md", last_run)
+    modified_streams = _modified_sources(logs_dir, last_run)
 
     rel = lambda f: os.path.relpath(f, logs_path)
     sections = [
@@ -206,7 +206,7 @@ def _collect_ingest_inputs(logs_path: Path, last_ingest: datetime | None) -> Ing
         _section("Modified filtered streams", modified_streams, str),
     ]
     new_inputs_list = "\n\n".join(s for s in sections if s)
-    if last_ingest is None:
+    if last_run is None:
         mode = "first_run"
     elif new_inputs_list:
         mode = "incremental"
@@ -215,7 +215,7 @@ def _collect_ingest_inputs(logs_path: Path, last_ingest: datetime | None) -> Ing
 
     return IngestInputs(
         mode=mode,
-        last_ingest=last_ingest,
+        last_run=last_run,
         new_inputs_list=new_inputs_list or "- (none detected)",
         active_conversations=new_active_convos,
         chats=new_chats,
@@ -672,16 +672,16 @@ def _base_prompt_context(now: str, logs_dir: str, memory_dir: Path) -> dict[str,
 
 
 def _inventory_prompt(now: str, logs_dir: str, memory_dir: Path, inputs: IngestInputs) -> str:
-    last_ingest_text = (
-        inputs.last_ingest.strftime("%Y-%m-%d %H:%M")
-        if inputs.last_ingest is not None else "never"
+    last_run_text = (
+        inputs.last_run.strftime("%Y-%m-%d %H:%M")
+        if inputs.last_run is not None else "never"
     )
     return INVENTORY_TEMPLATE.format(
         now=now,
         logs_dir=logs_dir,
         memory_dir=str(memory_dir),
         mode=inputs.mode,
-        last_ingest_date=last_ingest_text,
+        last_run_date=last_run_text,
         new_inputs_list=inputs.new_inputs_list,
         existing_pages_list=_existing_pages_list(memory_dir),
         existing_page_metadata=_page_metadata_list(memory_dir),
@@ -881,9 +881,9 @@ def run(
     memory_dir = logs_path / "memory"
     _bootstrap_memory(memory_dir)
 
-    checkpoint_path = memory_dir / ".last_ingest"
-    last_ingest = read_checkpoint(checkpoint_path, default_age=DEFAULT_MISSING_CHECKPOINT_AGE)
-    inputs = _collect_ingest_inputs(logs_path, last_ingest)
+    checkpoint_path = memory_dir / ".last_run"
+    last_run = read_checkpoint(checkpoint_path, default_age=DEFAULT_MISSING_CHECKPOINT_AGE)
+    inputs = _collect_ingest_inputs(logs_path, last_run)
 
     progress = MemoryIngestProgress(on_round)
     progress.emit(0)

@@ -279,8 +279,8 @@ export function MemexView() {
         {status && (
           <div className="memex-status">
             <span>{status.page_count} page{status.page_count !== 1 ? "s" : ""}</span>
-            {status.last_ingest && (
-              <span className="memex-status-sep">Updated {timeAgo(status.last_ingest)}</span>
+            {status.last_run && (
+              <span className="memex-status-sep">Updated {timeAgo(status.last_run)}</span>
             )}
           </div>
         )}

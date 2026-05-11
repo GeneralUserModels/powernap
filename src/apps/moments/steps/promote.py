@@ -15,7 +15,7 @@ load_dotenv()
 
 from apps.common.structured_completion import structured_completion
 from apps.common.structured_ops import StructuredOpsError
-from apps.moments.core.incremental import read_checkpoint, write_checkpoint
+from apps.moments.core.incremental import write_checkpoint
 from apps.moments.core.candidates import (
     CandidateError,
     MomentCandidate,
@@ -99,19 +99,16 @@ def run(
     api_key: str | None = None,
     subagent_model: str | None = None,
     subagent_api_key: str | None = None,
+    write_run_checkpoint: bool = True,
 ) -> str:
     logs_path = Path(logs_dir).resolve()
     tada_path = logs_path.parent / "logs-tada"
     state_dir = discovery_state_dir(tada_path)
-    checkpoint_path = state_dir / ".last_promotion"
     tada_path.mkdir(parents=True, exist_ok=True)
     state_dir.mkdir(parents=True, exist_ok=True)
     candidate_path = latest_candidate_file(tada_path)
     if candidate_path is None:
         return "no candidate files to promote"
-    last_promotion = read_checkpoint(checkpoint_path)
-    if last_promotion is not None and datetime.fromtimestamp(candidate_path.stat().st_mtime) <= last_promotion:
-        return "no new candidate files to promote"
     candidates = read_candidate_jsonl(candidate_path)
     candidates, routed_updates = _route_existing_slug_updates(tada_path, candidates)
 
@@ -134,8 +131,8 @@ def run(
     promoted = ranked[:n] if n > 0 else ranked
     for candidate in promoted:
         write_accepted_moment(tada_path, candidate)
-
-    write_checkpoint(checkpoint_path)
+    if write_run_checkpoint:
+        write_checkpoint(tada_path / ".last_run")
 
     summary = f"{result}\n\nRanked {len(ranked)} of {len(candidates)} candidates. Promoted top {len(promoted)} from {candidate_path}"
     if routed_updates:

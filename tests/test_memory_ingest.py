@@ -42,7 +42,7 @@ class _FakeMemoryAgent:
 class MemoryIngestTests(unittest.TestCase):
     def test_checkpoint_reader_seeds_missing_checkpoint_to_24_hours_ago(self):
         with tempfile.TemporaryDirectory() as d:
-            checkpoint = Path(d) / ".last_ingest"
+            checkpoint = Path(d) / ".last_run"
             before = datetime.now() - DEFAULT_MISSING_CHECKPOINT_AGE
 
             value = read_checkpoint(checkpoint, default_age=DEFAULT_MISSING_CHECKPOINT_AGE)
@@ -55,15 +55,15 @@ class MemoryIngestTests(unittest.TestCase):
 
     def test_checkpoint_reader_accepts_fractional_seconds(self):
         with tempfile.TemporaryDirectory() as d:
-            checkpoint = Path(d) / ".last_ingest"
+            checkpoint = Path(d) / ".last_run"
             checkpoint.write_text("2026-05-06T22:43:21.335231\n")
 
             self.assertEqual(read_checkpoint(checkpoint), datetime(2026, 5, 6, 22, 43, 21, 335231))
 
-    def test_memory_service_uses_ingest_checkpoint_for_24_hour_catchup(self):
+    def test_memory_service_uses_run_checkpoint_for_24_hour_catchup(self):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)
-            last_run = root / ".last_ingest"
+            last_run = root / ".last_run"
 
             self.assertTrue(scheduled_service_due("daily at 3am", last_run))
             self.assertTrue(last_run.exists())
@@ -81,7 +81,7 @@ class MemoryIngestTests(unittest.TestCase):
             first = ingest._collect_ingest_inputs(logs, None)
             self.assertEqual(first.mode, "first_run")
 
-            _write_checkpoint(logs / "memory" / ".last_ingest")
+            _write_checkpoint(logs / "memory" / ".last_run")
             chat = logs / "chats" / "chat_1" / "conversation.md"
             chat.parent.mkdir(parents=True)
             chat.write_text("**User:** hello\n")
@@ -196,7 +196,7 @@ class MemoryIngestTests(unittest.TestCase):
                 result = ingest.run(str(logs), model="fake-model")
 
             self.assertEqual([name for name, _ in calls], ["inventory", "create_page", "finalize"])
-            self.assertTrue((logs / "memory" / ".last_ingest").exists())
+            self.assertTrue((logs / "memory" / ".last_run").exists())
             self.assertIn("## Inventory", result)
             self.assertIn("## Content", result)
             self.assertIn("created project.md", result)
@@ -332,7 +332,7 @@ class MemoryIngestTests(unittest.TestCase):
             self.assertEqual(agents[2].calls[0]["kwargs"]["final_metadata_app"], "memory_finalize_pages")
             self.assertIn("Applied content page ops: project.md", result)
             self.assertIn("Structured update evidence", (memory / "project.md").read_text())
-            self.assertTrue((memory / ".last_ingest").exists())
+            self.assertTrue((memory / ".last_run").exists())
 
     def test_run_keeps_seed_checkpoint_on_bad_inventory(self):
         with tempfile.TemporaryDirectory() as d:
@@ -343,7 +343,7 @@ class MemoryIngestTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     ingest.run(str(logs), model="fake-model")
 
-            seeded = read_checkpoint(logs / "memory" / ".last_ingest")
+            seeded = read_checkpoint(logs / "memory" / ".last_run")
             self.assertIsNotNone(seeded)
             assert seeded is not None
             self.assertTrue(datetime.now() - timedelta(hours=25) <= seeded <= datetime.now() - timedelta(hours=23))
@@ -384,7 +384,7 @@ class MemoryIngestTests(unittest.TestCase):
                 with self.assertRaises(RuntimeError):
                     ingest.run(str(logs), model="fake-model")
 
-            seeded = read_checkpoint(logs / "memory" / ".last_ingest")
+            seeded = read_checkpoint(logs / "memory" / ".last_run")
             self.assertIsNotNone(seeded)
             assert seeded is not None
             self.assertTrue(datetime.now() - timedelta(hours=25) <= seeded <= datetime.now() - timedelta(hours=23))
@@ -460,7 +460,7 @@ class MemoryIngestTests(unittest.TestCase):
             )
             inputs = ingest.IngestInputs(
                 mode="incremental",
-                last_ingest=datetime(2025, 1, 1),
+                last_run=datetime(2025, 1, 1),
                 new_inputs_list="- chats/chat_1/conversation.md",
                 active_conversations=[],
                 chats=[],
@@ -655,7 +655,7 @@ class MemoryIngestTests(unittest.TestCase):
             ingest._bootstrap_memory(memory)
             inputs = ingest.IngestInputs(
                 mode="incremental",
-                last_ingest=datetime(2025, 1, 1),
+                last_run=datetime(2025, 1, 1),
                 new_inputs_list="- chats/chat_1/conversation.md",
                 active_conversations=[],
                 chats=[],
@@ -702,7 +702,7 @@ class MemoryIngestTests(unittest.TestCase):
             )
             inputs = ingest.IngestInputs(
                 mode="first_run",
-                last_ingest=None,
+                last_run=None,
                 new_inputs_list="- screen/filtered.jsonl",
                 active_conversations=[],
                 chats=[],
@@ -749,7 +749,7 @@ class MemoryIngestTests(unittest.TestCase):
             )
             inputs = ingest.IngestInputs(
                 mode="first_run",
-                last_ingest=None,
+                last_run=None,
                 new_inputs_list="- screen/filtered.jsonl",
                 active_conversations=[],
                 chats=[],

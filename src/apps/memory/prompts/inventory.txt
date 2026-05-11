@@ -1,7 +1,7 @@
 Current date and time: **{now}**
 
 Mode: `{mode}`
-Last ingest: **{last_ingest_date}**
+Last memory run: **{last_run_date}**
 
 ## Rules
 

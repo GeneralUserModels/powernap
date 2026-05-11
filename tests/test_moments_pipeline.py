@@ -146,6 +146,10 @@ def _discovery_state(root: Path) -> Path:
     return root / "logs-tada" / "_discovery"
 
 
+def _tada_run_checkpoint(root: Path) -> Path:
+    return root / "logs-tada" / ".last_run"
+
+
 def _candidate_files(root: Path) -> list[Path]:
     return sorted((_discovery_state(root) / "candidates").glob("*.jsonl"))
 
@@ -153,7 +157,7 @@ def _candidate_files(root: Path) -> list[Path]:
 class MomentsPipelineTests(unittest.TestCase):
     def test_scheduled_services_seed_missing_pipeline_checkpoint_to_24_hour_catchup(self):
         with tempfile.TemporaryDirectory() as d:
-            last_run = Path(d) / ".last_discovery"
+            last_run = Path(d) / ".last_run"
             self.assertTrue(scheduled_service_due("daily at 2am", last_run))
             self.assertTrue(last_run.exists())
             seeded = datetime.fromisoformat(last_run.read_text().strip())
@@ -389,7 +393,7 @@ class MomentsPipelineTests(unittest.TestCase):
             self.assertIn("completed irreversible actions", discover_structured.instructions[0])
             candidate_files = _candidate_files(root)
             self.assertEqual(len(candidate_files), 1)
-            self.assertTrue((_discovery_state(root) / ".last_discovery").exists())
+            self.assertTrue(_tada_run_checkpoint(root).exists())
 
             with patch.object(promote, "structured_completion", side_effect=promote_structured):
                 promote.run(str(logs), model="fake")
@@ -414,7 +418,7 @@ class MomentsPipelineTests(unittest.TestCase):
                  patch.object(discover, "structured_completion", side_effect=structured):
                 with self.assertRaises(CandidateError):
                     discover.run(str(logs), model="fake")
-            seeded = datetime.fromisoformat((_discovery_state(Path(d)) / ".last_discovery").read_text().strip())
+            seeded = datetime.fromisoformat(_tada_run_checkpoint(Path(d)).read_text().strip())
             self.assertTrue(datetime.now() - timedelta(hours=25) <= seeded <= datetime.now() - timedelta(hours=23))
 
     def test_first_discovery_defaults_to_24_hour_activity_window(self):
@@ -463,7 +467,7 @@ class MomentsPipelineTests(unittest.TestCase):
                  patch.object(discover, "structured_completion", side_effect=structured):
                 discover.run(str(logs), model="fake")
 
-            self.assertTrue((_discovery_state(Path(d)) / ".last_discovery").exists())
+            self.assertTrue(_tada_run_checkpoint(Path(d)).exists())
             candidate_files = _candidate_files(Path(d))
             self.assertEqual(len(candidate_files), 1)
 
@@ -486,7 +490,7 @@ class MomentsPipelineTests(unittest.TestCase):
                 result = discover.run(str(logs), model="fake")
 
             self.assertIn("Reconciled 0 discovered tasks to 0 candidates.", result)
-            self.assertTrue((_discovery_state(Path(d)) / ".last_discovery").exists())
+            self.assertTrue(_tada_run_checkpoint(Path(d)).exists())
 
     def test_structured_completion_accepts_provider_rejected_but_valid_discovery_json(self):
         raw = json.dumps({"tasks": [_candidate()]})
@@ -519,7 +523,7 @@ class MomentsPipelineTests(unittest.TestCase):
             with patch.object(promote, "structured_completion", side_effect=structured):
                 promote.run(str(logs), model="fake")
 
-            self.assertTrue((_discovery_state(root) / ".last_promotion").exists())
+            self.assertTrue(_tada_run_checkpoint(root).exists())
             accepted = root / "logs-tada" / "research" / "paper-digest.md"
             self.assertTrue(accepted.exists())
 
