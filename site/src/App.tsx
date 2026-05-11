@@ -610,7 +610,9 @@ function TabracadabraPage() {
             </div>
             <div className="demo-app-label">
               <span className="demo-app-icon">{theme.icon}</span>
-              {theme.app}
+              <span className="demo-app-name">{theme.app}</span>
+              <span className="demo-path-sep">·</span>
+              <span className="demo-path">~/assistant/textboxes/</span>
             </div>
             <div className="demo-tab-hint">
               {showSpinner && showTabHint && (
@@ -618,6 +620,9 @@ function TabracadabraPage() {
                   Option + Tab
                 </span>
               )}
+              <span className="demo-status">
+                {showSpinner ? "thinking" : "ready"}
+              </span>
             </div>
           </div>
 

@@ -37,7 +37,9 @@
 
   position: fixed;
   inset: 0;
-  background: var(--bg);
+  background:
+    linear-gradient(180deg, rgba(var(--cream-rgb), 0.42), transparent 280px),
+    var(--bg);
   font-family: var(--fs-sans);
   color: var(--text);
   overflow: hidden;
