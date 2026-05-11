@@ -1,9 +1,8 @@
 import React, { useEffect, useRef, useState } from "react";
 import { DEMOS } from "./demos";
 import { MemexDemo } from "./memex/memex";
+import { GH_URL, HeroActions, useDmgUrl } from "./shared";
 
-const REPO = "GeneralUserModels/tada";
-const RELEASES_PAGE = `https://github.com/${REPO}/releases/latest`;
 const SITE_BASE = "/tada/";
 const ROUTES = {
   home: SITE_BASE,
@@ -43,31 +42,6 @@ const RESEARCH_PAPERS = [
     url: "https://arxiv.org/abs/2601.04436",
   },
 ];
-
-function useDmgUrl(): string {
-  const [url, setUrl] = useState(RELEASES_PAGE);
-
-  useEffect(() => {
-    fetch(`https://api.github.com/repos/${REPO}/releases`, {
-      headers: { Accept: "application/vnd.github.v3+json" },
-    })
-      .then((res) => (res.ok ? res.json() : Promise.reject()))
-      .then((releases: Array<{ assets: Array<{ name: string; browser_download_url: string }> }>) => {
-        for (const release of releases) {
-          const dmg = release.assets.find(
-            (a) => a.name.endsWith(".dmg") && a.name.includes("arm64")
-          );
-          if (dmg) {
-            setUrl(dmg.browser_download_url);
-            return;
-          }
-        }
-      })
-      .catch(() => {});
-  }, []);
-
-  return url;
-}
 
 const SPINNER_FRAMES = ["|", "/", "-", "\\"];
 
@@ -408,11 +382,13 @@ function routeFromLocation(pathname: string, search: string) {
 function SiteNav({ active }: { active: "home" | "tabracadabra" | "memex" }) {
   return (
     <header className="site-nav">
-      <a className="site-brand" href={ROUTES.home} aria-label="Tada home">
-        <img src={`${SITE_BASE}tada.png`} alt="" />
-        <span>Tada</span>
-      </a>
       <nav className="site-nav-links" aria-label="Site">
+        <a
+          className={active === "home" ? "active" : ""}
+          href={ROUTES.home}
+        >
+          Home
+        </a>
         <a
           className={active === "tabracadabra" ? "active" : ""}
           href={ROUTES.tabracadabra}
@@ -425,7 +401,7 @@ function SiteNav({ active }: { active: "home" | "tabracadabra" | "memex" }) {
         >
           Memex
         </a>
-        <a href={`https://github.com/${REPO}`} target="_blank" rel="noreferrer">
+        <a href={GH_URL} target="_blank" rel="noreferrer">
           GitHub
         </a>
       </nav>
@@ -444,33 +420,16 @@ function TadaHomePage() {
       <main className="hero product-hero tada-home-hero">
         <h1 className="hero-title product-hero-title tada-home-title">
           Tada
-          <img
-            className="tada-home-logo product-hero-icon"
-            src={`${SITE_BASE}tada.png`}
-            alt=""
-            aria-hidden="true"
-          />
+          <span className="tada-home-logo product-hero-icon" aria-hidden="true">
+            🎉
+          </span>
         </h1>
         <p className="hero-subtitle product-hero-subtitle tada-home-subtitle">
           A research platform for prototyping personal AI interfaces that learn
           from computer use, model user context, and anticipate what people need
           next.
         </p>
-        <div className="hero-actions">
-          <a href={dmgUrl} className="btn btn-primary">
-            <DownloadIcon />
-            Download for macOS
-          </a>
-          <a
-            href={`https://github.com/${REPO}`}
-            className="btn btn-secondary"
-            target="_blank"
-            rel="noreferrer"
-          >
-            <StarIcon />
-            Star on GitHub
-          </a>
-        </div>
+        <HeroActions dmgUrl={dmgUrl} />
       </main>
 
       <section className="tada-products" aria-labelledby="interactions-title">
@@ -638,21 +597,7 @@ function TabracadabraPage() {
           An intelligent, context-aware assistant, in every textbox.
         </p>
 
-        <div className="hero-actions">
-          <a href={dmgUrl} className="btn btn-primary">
-            <DownloadIcon />
-            Download for macOS (Apple Silicon)
-          </a>
-          <a
-            href={`https://github.com/${REPO}`}
-            className="btn btn-secondary"
-            target="_blank"
-            rel="noreferrer"
-          >
-            <StarIcon />
-            Star on GitHub
-          </a>
-        </div>
+        <HeroActions dmgUrl={dmgUrl} />
       </main>
 
       <div className="demo-container">
@@ -721,41 +666,5 @@ function TabracadabraPage() {
       </div>
 
     </div>
-  );
-}
-
-function StarIcon() {
-  return (
-    <svg
-      width="15"
-      height="15"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
-    </svg>
-  );
-}
-
-function DownloadIcon() {
-  return (
-    <svg
-      width="15"
-      height="15"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-      <polyline points="7 10 12 15 17 10" />
-      <line x1="12" y1="15" x2="12" y2="3" />
-    </svg>
   );
 }

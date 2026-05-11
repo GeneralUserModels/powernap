@@ -80,27 +80,10 @@ body {
   z-index: 2;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 20px;
   font-family: -apple-system, BlinkMacSystemFont, system-ui, "Helvetica Neue",
     sans-serif;
-}
-
-.site-brand {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  color: var(--text);
-  text-decoration: none;
-  font-size: 14px;
-  font-weight: 700;
-}
-
-.site-brand img {
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
-  box-shadow: 0 8px 24px rgba(var(--sage-rgb), 0.18);
 }
 
 .site-nav-links {
@@ -139,9 +122,11 @@ body {
 }
 
 .tada-home-logo {
-  border-radius: 8px;
-  object-fit: contain;
-  box-shadow: 0 10px 28px rgba(var(--sage-rgb), 0.18);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.86em;
+  line-height: 1;
 }
 
 .tada-home-subtitle {
@@ -185,6 +170,19 @@ body {
   color: var(--text-secondary);
   font-size: 14px;
   line-height: 1.55;
+}
+
+.tada-alpha-note {
+  width: fit-content;
+  margin: 12px auto 0;
+  padding: 5px 8px;
+  color: #8A6D2F;
+  background: rgba(178, 137, 77, 0.1);
+  border: 1px solid rgba(178, 137, 77, 0.16);
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 1;
 }
 
 .tada-paper-grid {
