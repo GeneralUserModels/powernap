@@ -14,7 +14,7 @@ const RESEARCH_PAPERS = [
   {
     title: "Creating General User Models from Computer Use",
     source: "UIST 2025",
-    url: "https://dl.acm.org/doi/10.1145/3746059.3747722",
+    url: "https://arxiv.org/abs/2505.10831",
   },
   {
     title: "Learning Next Action Predictors from Human-Computer Interaction",

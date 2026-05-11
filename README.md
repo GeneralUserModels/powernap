@@ -28,7 +28,7 @@ npm run dev
 Tada 🎉 builds on research across a few academic papers. If you're interested, you can read or cite the papers below!
 
 <details>
-<summary><a href="https://dl.acm.org/doi/10.1145/3746059.3747722">Creating General User Models from Computer Use</a></summary>
+<summary><a href="https://arxiv.org/abs/2505.10831">Creating General User Models from Computer Use</a></summary>
 
 ```bibtex
 @inproceedings{shaikh2025creating,
