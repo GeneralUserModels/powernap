@@ -4,6 +4,40 @@ import { MemexDemo } from "./memex/memex";
 
 const REPO = "GeneralUserModels/tada";
 const RELEASES_PAGE = `https://github.com/${REPO}/releases/latest`;
+const SITE_BASE = "/tada/";
+const ROUTES = {
+  home: SITE_BASE,
+  tabra: `${SITE_BASE}tabra/`,
+  memex: `${SITE_BASE}memex/`,
+};
+
+const RESEARCH_PAPERS = [
+  {
+    title: "Creating General User Models from Computer Use",
+    source: "UIST 2025",
+    url: "https://dl.acm.org/doi/10.1145/3746059.3747722",
+  },
+  {
+    title: "Learning Next Action Predictors from Human-Computer Interaction",
+    source: "arXiv 2026",
+    url: "https://arxiv.org/abs/2603.05923",
+  },
+  {
+    title: "Just-In-Time Objectives: A General Approach for Specialized AI Interactions",
+    source: "CHI 2026",
+    url: "https://arxiv.org/abs/2510.14591",
+  },
+  {
+    title: "Learning to Simulate Human Dialogue",
+    source: "arXiv 2026",
+    url: "https://arxiv.org/abs/2601.04436",
+  },
+  {
+    title: "Behavior Latticing: Inferring User Motivations from Unstructured Interactions",
+    source: "arXiv 2026",
+    url: "https://arxiv.org/abs/2604.07629",
+  },
+];
 
 function useDmgUrl(): string {
   const [url, setUrl] = useState(RELEASES_PAGE);
@@ -348,13 +382,173 @@ function useAutocompleteDemo() {
 
 export function App() {
   const { pathname, search } = window.location;
-  const isMemex =
-    pathname.replace(/\/$/, "").endsWith("/memex") ||
-    new URLSearchParams(search).get("demo") === "memex";
-  return isMemex ? <MemexDemo /> : <HomePage />;
+  const route = routeFromLocation(pathname, search);
+
+  if (route === "memex") return <MemexDemo topNav={<SiteNav active="memex" />} />;
+  if (route === "tabra") return <TabracadabraPage />;
+  return <TadaHomePage />;
 }
 
-function HomePage() {
+function routeFromLocation(pathname: string, search: string) {
+  const demo = new URLSearchParams(search).get("demo");
+  if (demo === "memex") return "memex";
+  if (demo === "tabra" || demo === "tabracadabra") return "tabra";
+
+  const path = pathname.replace(/\/+$/, "");
+  if (path.endsWith("/memex")) return "memex";
+  if (path.endsWith("/tabra") || path.endsWith("/tabracadabra")) return "tabra";
+  return "home";
+}
+
+function SiteNav({ active }: { active: "home" | "tabra" | "memex" }) {
+  return (
+    <header className="site-nav">
+      <a className="site-brand" href={ROUTES.home} aria-label="Tada home">
+        <img src={`${SITE_BASE}tada.png`} alt="" />
+        <span>Tada</span>
+      </a>
+      <nav className="site-nav-links" aria-label="Site">
+        <a
+          className={active === "tabra" ? "active" : ""}
+          href={ROUTES.tabra}
+        >
+          Tabra
+        </a>
+        <a
+          className={active === "memex" ? "active" : ""}
+          href={ROUTES.memex}
+        >
+          Memex
+        </a>
+        <a href={`https://github.com/${REPO}`} target="_blank" rel="noreferrer">
+          GitHub
+        </a>
+      </nav>
+    </header>
+  );
+}
+
+function TadaHomePage() {
+  const dmgUrl = useDmgUrl();
+
+  return (
+    <div className="page tada-home">
+      <div className="grain" />
+      <SiteNav active="home" />
+
+      <main className="hero product-hero tada-home-hero">
+        <h1 className="hero-title product-hero-title tada-home-title">
+          Tada
+          <img
+            className="tada-home-logo product-hero-icon"
+            src={`${SITE_BASE}tada.png`}
+            alt=""
+            aria-hidden="true"
+          />
+        </h1>
+        <p className="hero-subtitle product-hero-subtitle tada-home-subtitle">
+          A research platform for prototyping personal AI interfaces that learn
+          from computer use, model user context, and anticipate what people need
+          next.
+        </p>
+        <div className="hero-actions">
+          <a href={dmgUrl} className="btn btn-primary">
+            <DownloadIcon />
+            Download for macOS
+          </a>
+          <a
+            href={`https://github.com/${REPO}`}
+            className="btn btn-secondary"
+            target="_blank"
+            rel="noreferrer"
+          >
+            <StarIcon />
+            Star on GitHub
+          </a>
+        </div>
+      </main>
+
+      <section className="tada-products" aria-labelledby="interactions-title">
+        <h2 className="tada-section-title" id="interactions-title">
+          Interactions
+        </h2>
+        <p className="tada-section-subtitle">
+          a couple of interactions we're currently testing
+        </p>
+
+        <div className="tada-product-grid">
+          <a className="tada-product-card tada-product-card--tabra" href={ROUTES.tabra}>
+            <div className="tada-product-visual" aria-hidden="true">
+              <span className="visual-line visual-line--long" />
+              <span className="visual-line" />
+              <span className="visual-completion" />
+              <span className="visual-cursor" />
+            </div>
+            <p className="tada-product-kicker">Assistant</p>
+            <h2>Tabracadabra</h2>
+            <p>An intelligent, context-aware assistant in every textbox.</p>
+          </a>
+
+          <a className="tada-product-card tada-product-card--memex" href={ROUTES.memex}>
+            <div className="tada-product-visual memex-card-visual" aria-hidden="true">
+              <svg className="memex-card-graph" viewBox="0 0 360 112">
+                <path className="memex-card-edge" d="M180 56 L92 34" />
+                <path className="memex-card-edge" d="M180 56 L108 84" />
+                <path className="memex-card-edge" d="M180 56 L258 34" />
+                <path className="memex-card-edge" d="M180 56 L274 84" />
+                <path className="memex-card-edge memex-card-edge--soft" d="M92 34 L108 84" />
+                <path className="memex-card-edge memex-card-edge--soft" d="M258 34 L274 84" />
+
+                <circle className="memex-card-node" cx="92" cy="34" r="11" />
+                <circle className="memex-card-node" cx="108" cy="84" r="11" />
+                <circle className="memex-card-node" cx="258" cy="34" r="11" />
+                <circle className="memex-card-node" cx="274" cy="84" r="11" />
+
+                <circle className="memex-card-node memex-card-node--core" cx="180" cy="56" r="19" />
+                <circle className="memex-card-dot" cx="180" cy="56" r="6" />
+
+                <rect className="memex-card-label" x="32" y="56" width="78" height="19" rx="7" />
+                <rect className="memex-card-label" x="226" y="56" width="88" height="19" rx="7" />
+                <text className="memex-card-label-text" x="44" y="69">people/</text>
+                <text className="memex-card-label-text" x="238" y="69">projects/</text>
+              </svg>
+            </div>
+            <p className="tada-product-kicker">Memory</p>
+            <h2>Memex</h2>
+            <p>A passive wiki that organizes what the system has seen.</p>
+          </a>
+        </div>
+      </section>
+
+      <section className="tada-research" aria-labelledby="research-title">
+        <h2 className="tada-section-title" id="research-title">
+          Research
+        </h2>
+        <p className="tada-section-subtitle">
+          relevant papers from stanford HCI / NLP
+        </p>
+
+        <div className="tada-paper-grid">
+          {RESEARCH_PAPERS.map((paper) => (
+            <a
+              key={paper.title}
+              className="tada-paper-card"
+              href={paper.url}
+              target="_blank"
+              rel="noreferrer"
+            >
+              <span>{paper.source}</span>
+              <h3>{paper.title}</h3>
+              <p>Read paper</p>
+            </a>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function TabracadabraPage() {
   const {
     demoIdx,
     segments,
@@ -426,15 +620,16 @@ function HomePage() {
   return (
     <div className="page">
       <div className="grain" />
+      <SiteNav active="tabra" />
 
-      <main className="hero">
-        <h1 className="hero-title">
+      <main className="hero product-hero">
+        <h1 className="hero-title product-hero-title">
           Tabracadabra{" "}
-          <span className="hero-emoji" aria-hidden="true">
+          <span className="hero-emoji product-hero-icon" aria-hidden="true">
             🎩
           </span>
         </h1>
-        <p className="hero-subtitle">
+        <p className="hero-subtitle product-hero-subtitle">
           An intelligent, context-aware assistant, in every textbox.
         </p>
 
@@ -443,7 +638,12 @@ function HomePage() {
             <DownloadIcon />
             Download for macOS (Apple Silicon)
           </a>
-          <a href={`https://github.com/${REPO}`} className="btn btn-secondary">
+          <a
+            href={`https://github.com/${REPO}`}
+            className="btn btn-secondary"
+            target="_blank"
+            rel="noreferrer"
+          >
             <StarIcon />
             Star on GitHub
           </a>

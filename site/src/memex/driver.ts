@@ -92,7 +92,7 @@ function applyEvent(state: DemoState, ev: TimelineEvent, elapsed: number): DemoS
   }
 }
 
-// Fully-built state for the interactive "Browse Dorothy's memex" mode.
+// Fully-built state for the compact wiki browser.
 function buildInteractiveState(selectedSlug: string): DemoState {
   const rawBySource: Record<string, RawEvent[]> = {
     screen: [], email: [], calendar: [], notif: [], filesys: [],
@@ -107,7 +107,10 @@ function buildInteractiveState(selectedSlug: string): DemoState {
     rawEventsBySource: rawBySource,
     activeLabel: null,
     completedLabelIds: new Set(LABELS.map((l) => l.id)),
-    createdPages: Object.keys(WIKI_PAGES).filter((s) => s !== "people/dorothy-gale"),
+    createdPages: [
+      "people/dorothy-gale",
+      ...Object.keys(WIKI_PAGES).filter((s) => s !== "people/dorothy-gale"),
+    ],
     showcasedSlug: selectedSlug,
     // A far-past start time forces showcaseProgress() to clamp at 1 — no
     // typing cursors, everything visible instantly.
@@ -134,8 +137,8 @@ export function useTimelineDriver(
     [selectedSlug]
   );
 
-  // When returning from interactive mode (user clicked Back to the demo),
-  // restart the autoplay from the beginning.
+  // If the autoplay demo is enabled again later, restart it from the beginning
+  // whenever it leaves interactive mode.
   useEffect(() => {
     if (!interactive) {
       startRef.current = performance.now();
@@ -145,6 +148,8 @@ export function useTimelineDriver(
   }, [interactive]);
 
   useEffect(() => {
+    if (interactiveRef.current) return;
+
     startRef.current = performance.now();
     eventIdxRef.current = 0;
     setState(initialState());
@@ -216,4 +221,3 @@ export function showcaseProgress(state: DemoState): number {
   // Full progress over 12 seconds.
   return Math.min(1, Math.max(0, dt / 12000));
 }
-

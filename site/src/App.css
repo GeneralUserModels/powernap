@@ -36,13 +36,24 @@
   --r-xl: 26px;
 }
 
+html {
+  scrollbar-gutter: stable;
+}
+
 body {
   font-family: -apple-system, BlinkMacSystemFont, system-ui, "Helvetica Neue",
     sans-serif;
   background: var(--bg);
   color: var(--text);
+  overflow-y: scroll;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+.page {
+  min-height: 100vh;
+  position: relative;
+  overflow-x: hidden;
 }
 
 /* ── Grain ───────────────────────────────────────────────── */
@@ -58,26 +69,378 @@ body {
   background-size: 200px;
 }
 
+/* ── Site nav ─────────────────────────────────────────────── */
+
+.site-nav {
+  width: 100%;
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 22px 24px 0;
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  font-family: -apple-system, BlinkMacSystemFont, system-ui, "Helvetica Neue",
+    sans-serif;
+}
+
+.site-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text);
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.site-brand img {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(var(--sage-rgb), 0.18);
+}
+
+.site-nav-links {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.site-nav-links a {
+  min-width: 64px;
+  color: var(--text-secondary);
+  text-decoration: none;
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1;
+  padding: 9px 11px;
+  border-radius: 8px;
+  text-align: center;
+  transition: color 0.15s, background 0.15s;
+}
+
+.site-nav-links a:hover,
+.site-nav-links a.active {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.62);
+}
+
+/* ── Tada home ────────────────────────────────────────────── */
+
+.tada-home-hero {
+  max-width: 760px;
+}
+
+.tada-home-title {
+  margin-bottom: 16px;
+}
+
+.tada-home-logo {
+  border-radius: 8px;
+  object-fit: contain;
+  box-shadow: 0 10px 28px rgba(var(--sage-rgb), 0.18);
+}
+
+.tada-home-subtitle {
+  max-width: 590px;
+}
+
+.tada-product-kicker {
+  color: var(--sage);
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: 0;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.tada-research,
+.tada-products {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 14px 24px 0;
+  position: relative;
+  z-index: 1;
+}
+
+.tada-research {
+  padding-top: 42px;
+  padding-bottom: 72px;
+}
+
+.tada-section-title {
+  margin-bottom: 8px;
+  color: var(--text);
+  font-size: 28px;
+  font-weight: 730;
+  letter-spacing: 0;
+  line-height: 1.15;
+}
+
+.tada-section-subtitle {
+  margin-bottom: 18px;
+  color: var(--text-secondary);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.tada-paper-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.tada-paper-card {
+  grid-column: span 2;
+  min-height: 164px;
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  color: var(--text);
+  text-decoration: none;
+  background: rgba(255, 255, 255, 0.66);
+  border: 1px solid rgba(var(--sage-rgb), 0.18);
+  border-radius: 8px;
+  box-shadow: 0 16px 42px rgba(var(--sage-rgb), 0.08);
+  transition: transform 0.18s, background 0.18s, border-color 0.18s;
+}
+
+.tada-paper-card:nth-child(n + 4) {
+  grid-column: span 3;
+}
+
+.tada-paper-card:hover {
+  transform: translateY(-2px);
+  background: rgba(255, 255, 255, 0.86);
+  border-color: rgba(var(--sage-rgb), 0.3);
+}
+
+.tada-paper-card span {
+  width: fit-content;
+  color: #4F7390;
+  background: rgba(79, 115, 144, 0.1);
+  border: 1px solid rgba(79, 115, 144, 0.16);
+  border-radius: 999px;
+  padding: 4px 8px;
+  font-size: 10.5px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.tada-paper-card h3 {
+  margin-top: 14px;
+  color: var(--text);
+  font-size: 17px;
+  font-weight: 690;
+  letter-spacing: 0;
+  line-height: 1.28;
+}
+
+.tada-paper-card p {
+  margin-top: auto;
+  padding-top: 16px;
+  color: var(--active-green);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.tada-product-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.tada-product-card {
+  min-height: 280px;
+  padding: 22px;
+  display: flex;
+  flex-direction: column;
+  color: var(--text);
+  text-decoration: none;
+  background: rgba(255, 255, 255, 0.64);
+  border: 1px solid rgba(var(--sage-rgb), 0.18);
+  border-radius: 8px;
+  box-shadow: 0 20px 48px rgba(var(--sage-rgb), 0.09);
+  transition: transform 0.18s, background 0.18s, border-color 0.18s;
+}
+
+.tada-product-card:hover {
+  transform: translateY(-2px);
+  background: rgba(255, 255, 255, 0.84);
+  border-color: rgba(var(--sage-rgb), 0.28);
+}
+
+.tada-product-card h2 {
+  margin-top: 16px;
+  font-size: 24px;
+  font-weight: 730;
+  letter-spacing: 0;
+  line-height: 1.15;
+}
+
+.tada-product-card p:last-child {
+  max-width: 330px;
+  margin-top: 9px;
+  color: var(--text-secondary);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.tada-product-visual {
+  height: 112px;
+  margin-bottom: auto;
+  position: relative;
+  overflow: hidden;
+  border-radius: 8px;
+  background: #F9FAF7;
+  border: 1px solid rgba(var(--sage-rgb), 0.14);
+}
+
+.tada-product-card--memex .tada-product-visual {
+  background: #F7F9FC;
+  border-color: rgba(82, 123, 184, 0.14);
+}
+
+.visual-line,
+.visual-line--long,
+.visual-completion {
+  position: absolute;
+  left: 22px;
+  height: 8px;
+  border-radius: 4px;
+}
+
+.visual-line {
+  top: 42px;
+  width: min(42%, 120px);
+  background: rgba(var(--sage-rgb), 0.18);
+}
+
+.visual-line--long {
+  top: 24px;
+  width: min(66%, 188px);
+  background: rgba(44, 58, 40, 0.12);
+}
+
+.visual-completion {
+  top: 62px;
+  width: min(76%, 220px);
+  background: rgba(var(--sage-rgb), 0.34);
+}
+
+.visual-cursor {
+  position: absolute;
+  top: 58px;
+  left: min(84%, 250px);
+  width: 2px;
+  height: 18px;
+  border-radius: 2px;
+  background: var(--sage);
+}
+
+.memex-card-visual {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.memex-card-graph {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.memex-card-edge {
+  fill: none;
+  stroke: rgba(82, 123, 184, 0.34);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+.memex-card-edge--soft {
+  stroke: rgba(82, 123, 184, 0.14);
+  stroke-width: 1.5;
+}
+
+.memex-card-node {
+  fill: rgba(255, 255, 255, 0.95);
+  stroke: rgba(82, 123, 184, 0.48);
+  stroke-width: 2;
+}
+
+.memex-card-node--core {
+  fill: rgba(var(--sage-rgb), 0.14);
+  stroke: rgba(var(--sage-rgb), 0.58);
+}
+
+.memex-card-dot {
+  fill: var(--active-green);
+}
+
+.memex-card-label {
+  fill: rgba(255, 255, 255, 0.72);
+  stroke: rgba(82, 123, 184, 0.14);
+}
+
+.memex-card-label-text {
+  fill: rgba(44, 58, 40, 0.56);
+  font-family: "SF Mono", Menlo, Monaco, monospace;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0;
+}
+
 /* ── Hero ────────────────────────────────────────────────── */
 
 .hero {
   max-width: 720px;
   margin: 0 auto;
-  padding: 64px 24px 32px;
+  padding: 44px 24px 32px;
   text-align: center;
 }
 
+.product-hero {
+  min-height: 190px;
+  padding-top: 34px;
+  padding-bottom: 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+}
+
 .hero-title {
-  font-size: clamp(36px, 7vw, 56px);
+  font-size: 56px;
   font-weight: 700;
-  letter-spacing: -0.03em;
+  letter-spacing: 0;
   line-height: 1.1;
   color: var(--text);
   margin-bottom: 16px;
 }
 
+.product-hero-title {
+  min-height: 62px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+
+.product-hero-icon {
+  width: 0.86em;
+  height: 0.86em;
+  flex-shrink: 0;
+}
+
 .hero-emoji {
   display: inline-block;
+  width: auto;
+  height: auto;
+  font-size: 0.86em;
+  line-height: 1;
   animation: wiggle 2s ease-in-out infinite;
 }
 
@@ -102,6 +465,10 @@ body {
   margin: 0 auto 24px;
 }
 
+.product-hero-subtitle {
+  margin: 0 auto 20px;
+}
+
 /* ── Buttons ─────────────────────────────────────────────── */
 
 .hero-actions {
@@ -110,21 +477,27 @@ body {
   justify-content: center;
   align-items: center;
   flex-wrap: wrap;
+  min-height: 38px;
 }
 
 .btn {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 7px;
   font-family: inherit;
   font-size: 12.5px;
   font-weight: 600;
-  padding: 9px 20px;
-  border-radius: 20px;
+  line-height: 1;
+  min-height: 38px;
+  padding: 0 18px;
+  border-radius: 8px;
   text-decoration: none;
   transition: all 0.15s;
   cursor: pointer;
   border: 1px solid transparent;
+  appearance: none;
+  white-space: nowrap;
 }
 
 .btn:active {
@@ -132,24 +505,34 @@ body {
 }
 
 .btn-primary {
-  background: rgba(var(--mint-rgb), 0.25);
-  color: var(--sage);
-  border-color: rgba(var(--sage-rgb), 0.25);
+  background: var(--active-green);
+  color: white;
+  border-color: var(--active-green);
+  box-shadow:
+    0 1px 2px rgba(44, 58, 40, 0.15),
+    inset 0 1px 0 rgba(255, 255, 255, 0.25);
 }
 
 .btn-primary:hover {
-  background: rgba(var(--mint-rgb), 0.45);
-  border-color: rgba(var(--sage-rgb), 0.35);
+  background: #4E9340;
+  border-color: #4E9340;
 }
 
 .btn-secondary {
-  background: rgba(255, 255, 255, 0.6);
-  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.62);
+  color: var(--text);
   border-color: var(--glass-border);
 }
 
 .btn-secondary:hover {
-  background: rgba(255, 255, 255, 0.85);
+  background: rgba(255, 255, 255, 0.86);
+  border-color: rgba(var(--sage-rgb), 0.32);
+}
+
+.btn svg {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
 }
 
 /* ── Demo ────────────────────────────────────────────────── */
@@ -234,7 +617,7 @@ body {
   font-size: 10px;
   font-weight: 650;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0;
   color: var(--demo-header-text);
   opacity: 0.7;
   background: rgba(128, 128, 128, 0.15);
@@ -445,7 +828,7 @@ body {
   opacity: 0.5;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
-  letter-spacing: 0.02em;
+  letter-spacing: 0;
   font-family: -apple-system, BlinkMacSystemFont, system-ui, monospace;
   transition: color 0.5s;
 }
@@ -537,5 +920,56 @@ body {
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@media (max-width: 760px) {
+  .site-nav {
+    padding-top: 18px;
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .site-nav-links {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .site-nav-links a {
+    padding-inline: 8px;
+  }
+
+  .tada-home-subtitle {
+    font-size: 15px;
+  }
+
+  .tada-research,
+  .tada-products {
+    padding-inline: 18px;
+  }
+
+  .tada-paper-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .tada-paper-card,
+  .tada-paper-card:nth-child(n + 4) {
+    grid-column: auto;
+  }
+
+  .tada-product-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .hero {
+    padding-top: 38px;
+  }
+
+  .hero-title {
+    font-size: 42px;
+  }
+
+  .demo-container {
+    padding-inline: 14px;
   }
 }
