@@ -8,6 +8,7 @@ import sys
 import tempfile
 import logging
 import time
+import types
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from importlib.resources import files
@@ -15,6 +16,25 @@ from pathlib import Path
 from typing import List, Optional
 
 from PIL import Image
+
+
+def _disable_napsack_tinfoil_import() -> None:
+    """Avoid importing napsack's optional Tinfoil stack during LiteLLM setup."""
+    module_name = "napsack.label.clients.tinfoil"
+    if module_name in sys.modules:
+        return
+
+    module = types.ModuleType(module_name)
+
+    class TinfoilClient:
+        def __init__(self, *args, **kwargs):
+            raise RuntimeError("TinfoilClient is not bundled in Tada; use LiteLLMClient instead.")
+
+    module.TinfoilClient = TinfoilClient
+    sys.modules[module_name] = module
+
+
+_disable_napsack_tinfoil_import()
 
 # Import from pack
 from napsack.label.clients.litellm import LiteLLMClient

@@ -39,7 +39,7 @@ export function WelcomeStep({ onStart, serverReady = true }: Props) {
         {!serverReady ? (
           <div className="startup-indicator">
             <span className="startup-spinner" />
-            <span>Starting up…</span>
+            <span>Starting up… this can take a minute or two</span>
           </div>
         ) : (
           <div />
