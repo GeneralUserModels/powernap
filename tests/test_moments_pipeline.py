@@ -30,7 +30,7 @@ from apps.moments.core.candidates import (
 )
 from apps.moments.api import routes as moments_routes
 from apps.moments.runtime import execute
-from apps.moments.runtime.scheduler import load_run_history, scheduled_service_due, should_run
+from apps.moments.runtime.scheduler import _execute_one_moment, load_run_history, scheduled_service_due, should_run
 from apps.moments.schemas.structured import DiscoveryPayload
 
 
@@ -155,6 +155,98 @@ def _candidate_files(root: Path) -> list[Path]:
 
 
 class MomentsPipelineTests(unittest.TestCase):
+    def test_execute_one_moment_runs_in_background_worker_and_records_success(self):
+        async def run():
+            with tempfile.TemporaryDirectory() as d:
+                root = Path(d)
+                logs = root / "logs"
+                logs.mkdir()
+                tada = root / "logs-tada"
+                task_dir = tada / "research"
+                task_dir.mkdir(parents=True)
+                task_path = task_dir / "brief.md"
+                task_path.write_text(
+                    "---\n"
+                    "title: Brief\n"
+                    "description: Worker-backed run.\n"
+                    "cadence: once\n"
+                    "---\n\nBody\n"
+                )
+                results_dir = tada / "results"
+                fm = {"title": "Brief", "description": "Worker-backed run.", "cadence": "once"}
+
+                class FakeRunner:
+                    def __init__(self):
+                        self.calls = []
+
+                    async def run(self, job_name, payload, on_event=None):
+                        self.calls.append((job_name, payload))
+                        output_dir = Path(payload["output_dir"])
+                        output_pages = output_dir / "output"
+                        output_pages.mkdir(parents=True)
+                        (output_pages / "a.md").write_text("# A\n")
+                        (output_pages / "b.md").write_text("# B\n")
+                        (output_dir / "meta.json").write_text(json.dumps({
+                            "title": "Brief",
+                            "description": "Worker-backed run.",
+                        }))
+                        if on_event:
+                            await on_event({
+                                "type": "round",
+                                "agent": "moment_run:brief",
+                                "message": "Running: Brief",
+                                "slug": "brief",
+                                "cadence": "once",
+                                "num_turns": 1,
+                                "max_turns": 2,
+                            })
+                        return {"success": True}
+
+                class FakeState:
+                    def __init__(self):
+                        self.moments_executor_sem = asyncio.BoundedSemaphore(1)
+                        self.moments_runs_lock = asyncio.Lock()
+                        self.background_job_runner = FakeRunner()
+                        self.activities = []
+                        self.broadcasts = []
+
+                    async def broadcast_activity(self, *args, **kwargs):
+                        self.activities.append((args, kwargs))
+
+                    async def broadcast(self, event, data):
+                        self.broadcasts.append((event, data))
+
+                state = FakeState()
+                await _execute_one_moment(
+                    state,
+                    task_path,
+                    "brief",
+                    fm,
+                    {},
+                    "once",
+                    "",
+                    str(logs),
+                    results_dir,
+                    tada,
+                    "fake-model",
+                    "secret-key",
+                    None,
+                )
+
+                return state, load_run_history(results_dir)
+
+        state, history = asyncio.run(run())
+        self.assertEqual(state.background_job_runner.calls[0][0], "moments.execute")
+        payload = state.background_job_runner.calls[0][1]
+        self.assertEqual(payload["api_key"], "secret-key")
+        self.assertEqual(payload["activity"]["agent"], "moment_run:brief")
+        self.assertIn("brief", history)
+        self.assertEqual([event for event, _ in state.broadcasts], ["moment_completed"])
+        self.assertTrue(any(
+            args and args[0] == "moment_run:brief" and (len(args) == 1 or args[1] is None)
+            for args, _ in state.activities
+        ))
+
     def test_scheduled_services_seed_missing_pipeline_checkpoint_to_24_hour_catchup(self):
         with tempfile.TemporaryDirectory() as d:
             last_run = Path(d) / ".last_run"

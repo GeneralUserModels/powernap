@@ -13,6 +13,7 @@ from agent.builder import _ensure_sandbox_async
 from apps.moments.runtime.scheduler import scheduled_service_due
 from server.cost_tracker import init_cost_tracking
 from server.config import DEFAULT_AGENT_MODEL
+from server.process_jobs import relay_worker_event
 
 logger = logging.getLogger(__name__)
 
@@ -81,8 +82,8 @@ async def run_memory_service(state) -> None:
     logs_dir = str(Path(state.config.log_dir).resolve())
     run_checkpoint_file = Path(logs_dir) / "memory" / ".last_run"
 
-    # Pre-initialize sandbox on the event-loop thread (signal handlers
-    # can only be registered here, not inside the worker thread).
+    # Keep the server-side sandbox ready for lightweight service setup; heavy
+    # agent work initializes its own sandbox inside the background worker.
     await _ensure_sandbox_async([logs_dir])
 
     while True:
@@ -103,27 +104,23 @@ async def run_memory_service(state) -> None:
             subagent_api_key = cfg.resolve_api_key("subagent_api_key") if cfg.subagent_model else None
 
             try:
-                ingest_msg = "Ingesting memories…"
-                await state.broadcast_activity("memory", ingest_msg)
-                on_round = state.make_round_callback("memory", ingest_msg)
-                logger.info("Memory: running ingest")
-                await asyncio.to_thread(
-                    MemoryIngest(logs_dir, model, api_key, subagent_model, subagent_api_key).run,
-                    on_round=on_round,
+                logger.info("Memory: running worker pipeline")
+                result = await state.background_job_runner.run(
+                    "memory.pipeline",
+                    {
+                        "logs_dir": logs_dir,
+                        "model": model,
+                        "api_key": api_key,
+                        "subagent_model": subagent_model,
+                        "subagent_api_key": subagent_api_key,
+                    },
+                    on_event=lambda event: relay_worker_event(state, event),
                 )
-                logger.info("Memory: ingest complete")
-                await state.broadcast("memory_updated", {})
-
-                lint_msg = "Auditing memories…"
-                await state.broadcast_activity("memory", lint_msg)
-                lint_on_round = state.make_round_callback("memory", lint_msg)
-                logger.info("Memory: running lint")
-                await asyncio.to_thread(
-                    MemoryLint(logs_dir, model, api_key, subagent_model, subagent_api_key).run,
-                    on_round=lint_on_round,
-                )
-                logger.info("Memory: lint complete")
-
+                if result.get("success"):
+                    logger.info("Memory: worker pipeline complete")
+                    await state.broadcast("memory_updated", {})
+                else:
+                    logger.warning("Memory: worker pipeline returned unsuccessful result: %s", result)
             finally:
                 await state.broadcast_activity("memory")
 

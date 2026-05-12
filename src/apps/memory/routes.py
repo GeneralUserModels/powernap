@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import re
 from datetime import datetime
 from pathlib import Path
@@ -38,14 +39,11 @@ def _parse_frontmatter(text: str) -> dict:
     return fm
 
 
-@router.get("/pages")
-async def list_pages(request: Request, q: str = Query(default="", description="Search within titles and page content")):
-    """List all wiki pages with their frontmatter metadata."""
-    memory_dir = _get_memory_dir(request)
+def _list_pages_data(memory_dir: Path, query_text: str) -> list[dict]:
     if not memory_dir.exists():
         return []
 
-    query = q.strip().lower()
+    query = query_text.strip().lower()
     pages = []
     for md_file in sorted(memory_dir.rglob("*.md")):
         rel = md_file.relative_to(memory_dir)
@@ -77,6 +75,36 @@ async def list_pages(request: Request, q: str = Query(default="", description="S
         })
 
     return pages
+
+
+def _memory_status_data(memory_dir: Path) -> dict:
+    def _read_ts(p: Path) -> str | None:
+        if not p.exists():
+            return None
+        try:
+            return datetime.fromisoformat(p.read_text().strip()).isoformat()
+        except (ValueError, OSError):
+            return None
+
+    page_count = 0
+    if memory_dir.exists():
+        for md_file in memory_dir.rglob("*.md"):
+            rel = md_file.relative_to(memory_dir)
+            if str(rel) not in _SPECIAL_FILES and not any(_HIDDEN_RE.match(part) for part in rel.parts):
+                page_count += 1
+
+    return {
+        "exists": memory_dir.exists(),
+        "last_run": _read_ts(memory_dir / ".last_run"),
+        "page_count": page_count,
+    }
+
+
+@router.get("/pages")
+async def list_pages(request: Request, q: str = Query(default="", description="Search within titles and page content")):
+    """List all wiki pages with their frontmatter metadata."""
+    memory_dir = _get_memory_dir(request)
+    return await asyncio.to_thread(_list_pages_data, memory_dir, q)
 
 
 @router.get("/pages/{page_path:path}")
@@ -161,24 +189,4 @@ async def delete_page(page_path: str, request: Request):
 async def get_status(request: Request):
     """Return wiki status: last feature run time and page count."""
     memory_dir = _get_memory_dir(request)
-
-    def _read_ts(p: Path) -> str | None:
-        if not p.exists():
-            return None
-        try:
-            return datetime.fromisoformat(p.read_text().strip()).isoformat()
-        except (ValueError, OSError):
-            return None
-
-    page_count = 0
-    if memory_dir.exists():
-        for md_file in memory_dir.rglob("*.md"):
-            rel = md_file.relative_to(memory_dir)
-            if str(rel) not in _SPECIAL_FILES and not any(_HIDDEN_RE.match(part) for part in rel.parts):
-                page_count += 1
-
-    return {
-        "exists": memory_dir.exists(),
-        "last_run": _read_ts(memory_dir / ".last_run"),
-        "page_count": page_count,
-    }
+    return await asyncio.to_thread(_memory_status_data, memory_dir)

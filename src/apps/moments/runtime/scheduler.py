@@ -10,11 +10,12 @@ import time as _time
 from datetime import datetime, time, timedelta, timezone
 from pathlib import Path
 
-from apps.moments.runtime.execute import run as execute_moment, _parse_frontmatter as parse_frontmatter
+from apps.moments.runtime.execute import _parse_frontmatter as parse_frontmatter
 from apps.moments.core.paths import list_task_files
 from apps.moments.core.state import clear_pending_update, load_state
 from apps.moments.core.incremental import DEFAULT_MISSING_CHECKPOINT_AGE
 from server.feature_flags import is_enabled
+from server.process_jobs import relay_worker_event
 
 logger = logging.getLogger(__name__)
 
@@ -232,19 +233,33 @@ async def _execute_one_moment(
         await state.broadcast_activity(
             activity_key, run_msg, slug=slug, cadence=effective_cadence,
         )
-        on_round = state.make_round_callback(
-            activity_key, run_msg, slug=slug, cadence=effective_cadence,
-        )
         try:
-            success = await asyncio.to_thread(
-                execute_moment, str(md_file), output_dir, logs_dir, model,
-                cadence_override=cadence_override, schedule_override=sched_override,
-                api_key=api_key,
-                last_run_at=last_run_at,
-                on_round=on_round,
-                subagent_model=subagent_model,
-                subagent_api_key=subagent_api_key,
+            result = await state.background_job_runner.run(
+                "moments.execute",
+                {
+                    "task_path": str(md_file),
+                    "output_dir": output_dir,
+                    "logs_dir": logs_dir,
+                    "model": model,
+                    "cadence_override": cadence_override,
+                    "schedule_override": sched_override,
+                    "api_key": api_key,
+                    "last_run_at": last_run_at,
+                    "subagent_model": subagent_model,
+                    "subagent_api_key": subagent_api_key,
+                    "activity": {
+                        "agent": activity_key,
+                        "message": run_msg,
+                        "slug": slug,
+                        "cadence": effective_cadence,
+                    },
+                },
+                on_event=lambda event: relay_worker_event(state, event),
             )
+            success = bool(result.get("success"))
+        except Exception:
+            logger.exception("Moment worker failed: %s", slug)
+            success = False
         finally:
             await state.broadcast_activity(activity_key)
         completed_at = _time.time()
