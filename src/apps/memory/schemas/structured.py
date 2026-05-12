@@ -95,6 +95,6 @@ class FinalizePageOpsPayload(StrictModel):
         description="Full replacements for index.md, log.md, schema.md, or validation-repair pages.",
     )
     delete_pages: list[PageDeleteOp] = Field(
-        description="Superseded normal content pages that are safe to delete after a move or split.",
+        description="Existing normal content pages that are safe to delete after a move or split; omit special, archived, hidden, or absent paths.",
     )
     notes: str = Field(description="Short summary of finalize repairs.")

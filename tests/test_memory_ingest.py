@@ -610,6 +610,65 @@ class MemoryIngestTests(unittest.TestCase):
                     payload_model=FinalizePageOpsPayload,
                 )
 
+    def test_finalize_ops_can_ignore_archived_delete_targets(self):
+        with tempfile.TemporaryDirectory() as d:
+            memory = Path(d) / "logs" / "memory"
+            ingest._bootstrap_memory(memory)
+            archived = memory / "_archive" / "people" / "arian-agrawal.md"
+            archived.parent.mkdir(parents=True)
+            archived.write_text(
+                "---\n"
+                "title: Arian Agrawal\n"
+                "confidence: 0.85\n"
+                "last_updated: 2026-04-21\n"
+                "---\n\n"
+                "Archived profile.\n"
+            )
+            result = "```json\n" + json.dumps({
+                "create_pages": [],
+                "update_pages": [],
+                "delete_pages": [{"path": "_archive/people/arian-agrawal.md"}],
+                "notes": "archive cleanup",
+            }) + "\n```"
+
+            ops, notes = ingest._parse_page_ops(
+                result,
+                memory,
+                allow_special=True,
+                payload_model=FinalizePageOpsPayload,
+                ignore_archived_deletes=True,
+            )
+            changed = ingest._apply_page_ops(memory, ops)
+
+            self.assertEqual(notes, "archive cleanup")
+            self.assertEqual(ops["delete_pages"], [])
+            self.assertEqual(changed, [])
+            self.assertTrue(archived.exists())
+
+    def test_finalize_ops_can_ignore_missing_delete_targets(self):
+        with tempfile.TemporaryDirectory() as d:
+            memory = Path(d) / "logs" / "memory"
+            ingest._bootstrap_memory(memory)
+            result = "```json\n" + json.dumps({
+                "create_pages": [],
+                "update_pages": [],
+                "delete_pages": [{"path": "orgs-lightfern-md.md"}],
+                "notes": "missing cleanup",
+            }) + "\n```"
+
+            ops, notes = ingest._parse_page_ops(
+                result,
+                memory,
+                allow_special=True,
+                payload_model=FinalizePageOpsPayload,
+                ignore_missing_deletes=True,
+            )
+            changed = ingest._apply_page_ops(memory, ops)
+
+            self.assertEqual(notes, "missing cleanup")
+            self.assertEqual(ops["delete_pages"], [])
+            self.assertEqual(changed, [])
+
     def test_existing_page_update_payload_rejects_wrong_shape(self):
         with self.assertRaises(ValidationError):
             ExistingPageUpdatePayload.model_validate({

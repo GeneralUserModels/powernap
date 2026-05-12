@@ -31,6 +31,7 @@ Execution guidance:
 - If you need existing `index.md` and `log.md` content, read them together once.
 - Return full replacement markdown for `index.md`, `log.md`, any page that must be repaired, and any minimal validation stub that must be created.
 - Mark superseded original pages for deletion when they should disappear from Memex after a move/split. Also remove those pages from `index.md` and mention the deletion in `log.md`.
+- Only include `delete_pages` entries for existing normal content pages listed in the provided metadata. Omit archived, hidden, special, or already-missing paths.
 - Planning is optional. Keep it compact, and do not spend extra rounds on checklist bookkeeping.
 - You do not need to re-read `index.md` or `log.md` solely to verify your own writes; Python validates the wiki after finalize.
 

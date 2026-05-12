@@ -550,19 +550,32 @@ def _validate_markdown_for_write(path: Path, memory_dir: Path, markdown: str, al
         raise ValueError(f"Memory content page must include YAML frontmatter: {rel}")
 
 
-def _validate_page_for_delete(path: Path, memory_dir: Path) -> None:
+def _validate_page_for_delete(
+    path: Path,
+    memory_dir: Path,
+    *,
+    ignore_archived: bool = False,
+    ignore_missing: bool = False,
+) -> bool:
     memory_dir = memory_dir.resolve()
     path = path.resolve()
     try:
         rel = path.relative_to(memory_dir)
     except ValueError as exc:
         raise ValueError(f"Memory delete path escapes memory dir: {path}") from exc
-    if _is_hidden_or_special(rel):
+    if bool(rel.parts) and rel.parts[0] == ARCHIVE_MEMORY_DIR:
+        if ignore_archived:
+            return False
+        raise ValueError(f"Memory delete path must be a normal content page: {rel}")
+    if str(rel) in SPECIAL_MEMORY_FILES or any(part.startswith(".") for part in rel.parts):
         raise ValueError(f"Memory delete path must be a normal content page: {rel}")
     if not path.exists():
+        if ignore_missing:
+            return False
         raise ValueError(f"delete_pages target does not exist: {rel}")
     if not path.is_file():
         raise ValueError(f"delete_pages target is not a file: {rel}")
+    return True
 
 
 def _has_frontmatter_text(text: str) -> bool:
@@ -578,6 +591,8 @@ def _parse_page_ops(
     require_update_exists: bool = False,
     default_create_path: str | None = None,
     default_update_path: str | None = None,
+    ignore_archived_deletes: bool = False,
+    ignore_missing_deletes: bool = False,
 ) -> tuple[dict[str, list[dict[str, str]]], str]:
     memory_dir = memory_dir.resolve()
     try:
@@ -616,7 +631,13 @@ def _parse_page_ops(
             raise ValueError("delete_pages entries must be objects")
         rel = require_string(item, "path")
         path = safe_rel_path(memory_dir, rel, suffix=".md")
-        _validate_page_for_delete(path, memory_dir)
+        if not _validate_page_for_delete(
+            path,
+            memory_dir,
+            ignore_archived=ignore_archived_deletes,
+            ignore_missing=ignore_missing_deletes,
+        ):
+            continue
         ops["delete_pages"].append({"path": str(path.relative_to(memory_dir))})
     written_paths = {
         item["path"]
@@ -652,7 +673,13 @@ def _apply_page_ops(memory_dir: Path, ops: dict[str, list[dict[str, str]]]) -> l
         changed.append(str(path.relative_to(memory_dir)))
     for item in ops.get("delete_pages", []):
         path = safe_rel_path(memory_dir, item["path"], suffix=".md")
-        _validate_page_for_delete(path, memory_dir)
+        if not _validate_page_for_delete(
+            path,
+            memory_dir,
+            ignore_archived=True,
+            ignore_missing=True,
+        ):
+            continue
         rel = str(path.relative_to(memory_dir))
         path.unlink()
         changed.append(rel)
@@ -992,6 +1019,8 @@ def run(
         memory_dir,
         allow_special=True,
         payload_model=FinalizePageOpsPayload,
+        ignore_archived_deletes=True,
+        ignore_missing_deletes=True,
     )
     _apply_page_ops(memory_dir, finalize_ops)
 
