@@ -82,6 +82,16 @@
     ],
     "extraResources": [
       {
+        "from": "./src/shared",
+        "to": "python-src/shared",
+        "filter": [
+          "**/*",
+          "!**/__pycache__/**",
+          "!**/*.pyc",
+          "!**/*.pyo"
+        ]
+      },
+      {
         "from": "./src/server",
         "to": "python-src/server",
         "filter": [

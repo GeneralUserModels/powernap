@@ -14,10 +14,12 @@ from pathlib import Path
 from mcp.server.fastmcp import FastMCP
 from mcp.server.session import ServerSession
 from pydantic import AnyUrl
+from shared.model_catalog import default_model
 
 logger = logging.getLogger(__name__)
 
 CHUNK_SECONDS = 120  # 2 minutes
+DEFAULT_TRANSCRIPTION_MODEL = default_model("llm")
 
 _mic_recorder = None
 _sys_recorder = None
@@ -90,7 +92,7 @@ async def _transcription_loop() -> None:
     """Background task: every CHUNK_SECONDS, mix active streams, transcribe, notify."""
     global _session_file
 
-    model = os.environ.get("TADA_TRANSCRIPTION_MODEL", "gemini/gemini-3.1-flash-lite-preview")
+    model = os.environ.get("TADA_TRANSCRIPTION_MODEL", DEFAULT_TRANSCRIPTION_MODEL)
     api_key = os.environ.get("TADA_TRANSCRIPTION_API_KEY") or None
 
     session_path = os.environ.get("TADA_SESSION_FILE", "")

@@ -185,9 +185,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path("src").resolve()))
 
 from apps.moments.steps import discover, promote
+from shared.model_catalog import default_model
 
 cfg = json.loads(Path("tada-config.json").read_text())
-model = cfg.get("moments_agent_model") or "gemini/gemini-3-flash-preview"
+model = cfg.get("moments_agent_model") or default_model("agent")
 api_key = cfg.get("moments_agent_api_key") or cfg.get("default_llm_api_key") or None
 logs = "/tmp/powernap-moments-smoke/logs"
 
@@ -213,9 +214,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path("src").resolve()))
 
 from apps.moments.steps import discover
+from shared.model_catalog import default_model
 
 cfg = json.loads(Path("tada-config.json").read_text())
-model = cfg.get("moments_agent_model") or "gemini/gemini-3-flash-preview"
+model = cfg.get("moments_agent_model") or default_model("agent")
 api_key = cfg.get("moments_agent_api_key") or cfg.get("default_llm_api_key") or None
 logs = "/tmp/powernap-moments-smoke/logs"
 
@@ -377,6 +379,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path("src").resolve()))
 
 from apps.moments.steps import discover, promote
+from shared.model_catalog import default_model
 
 name = os.environ["VARIANT_NAME"]
 round_root = Path(os.environ["ROUND_ROOT"])
@@ -395,7 +398,7 @@ for attr, value in json.loads((round_root / "variants" / name / "overrides.json"
     setattr(discover, attr, value)
 
 cfg = json.loads(Path("tada-config.json").read_text())
-model = cfg.get("moments_agent_model") or "gemini/gemini-3-flash-preview"
+model = cfg.get("moments_agent_model") or default_model("agent")
 api_key = cfg.get("moments_agent_api_key") or cfg.get("default_llm_api_key") or None
 logs = str(run_root / "logs")
 
