@@ -16,6 +16,9 @@ from pathlib import Path
 from typing import List, Optional
 
 from PIL import Image
+from shared.model_catalog import default_model
+
+DEFAULT_LABEL_MODEL = default_model("llm")
 
 
 def _disable_napsack_tinfoil_import() -> None:
@@ -93,12 +96,12 @@ class Labeler:
             max_workers: Number of parallel chunk processors.
             log_dir: Directory to save labels.jsonl and screenshots.
             save_screenshots: If True, save screenshots for labeled samples.
-            model: Gemini model name for labeling (default: gemini-3.1-flash-lite-preview).
+            model: Gemini model name for labeling (default: catalog llm model).
         """
         self.max_workers = max_workers
         resolved_api_key = api_key or os.environ.get("TADA_LABEL_API_KEY") or None
         with contextlib.redirect_stdout(sys.stderr):
-            self.client = LiteLLMClient(model_name=model or "gemini/gemini-3.1-flash-lite-preview", api_key=resolved_api_key)
+            self.client = LiteLLMClient(model_name=model or DEFAULT_LABEL_MODEL, api_key=resolved_api_key)
         self.prompt = self._load_prompt()
         self.executor = ThreadPoolExecutor(max_workers=max_workers)
         self.save_screenshots = save_screenshots

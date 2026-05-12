@@ -14,8 +14,10 @@ from dataclasses import dataclass
 from typing import List, Optional
 
 from litellm import completion as litellm_completion
+from shared.model_catalog import default_model
 
 logger = logging.getLogger(__name__)
+DEFAULT_REWARD_LLM = default_model("llm")
 
 
 @dataclass
@@ -38,7 +40,7 @@ class RewardScorer:
     
     def __init__(
         self,
-        reward_llm: str = "gemini/gemini-3.1-flash-lite-preview",
+        reward_llm: str = DEFAULT_REWARD_LLM,
         api_key: str = "",
         accuracy_weight: float = 0.5,
         formatting_weight: float = 0.5,
@@ -325,7 +327,7 @@ class RewardScorer:
 
 
 def create_reward_scorer(
-    reward_llm: str = "gemini/gemini-3.1-flash-lite-preview",
+    reward_llm: str = DEFAULT_REWARD_LLM,
     api_key: str = "",
     accuracy_weight: float = 0.5,
     formatting_weight: float = 0.5,

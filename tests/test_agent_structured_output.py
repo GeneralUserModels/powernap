@@ -16,6 +16,7 @@ if str(SRC) not in sys.path:
 from agent.agent import Agent, STRUCTURED_FINAL_MAX_TOKENS
 from apps.common.structured_completion import pydantic_response_format
 from apps.memory.schemas.structured import FinalizePageOpsPayload
+from shared.model_catalog import default_model
 
 
 class _DefaultListPayload(BaseModel):
@@ -52,7 +53,7 @@ class AgentStructuredOutputTests(unittest.TestCase):
             )
 
         agent = Agent(
-            model="gemini/gemini-3-flash-preview",
+            model=default_model("agent"),
             system_prompt="system",
             tools=[],
             llm_max_tokens=16000,

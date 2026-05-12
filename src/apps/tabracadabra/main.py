@@ -27,6 +27,7 @@ from agent.tools.task_manager import (
     TaskUpdateTool,
 )
 from agent.tools.terminal_readonly import ReadOnlyTerminalTool
+from shared.model_catalog import default_model
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +45,7 @@ from ApplicationServices import (
 
 
 _PROMPTS_DIR = Path(__file__).parent / "prompts"
+DEFAULT_TABRACADABRA_MODEL = default_model("llm")
 
 
 from typing import NamedTuple
@@ -333,7 +335,7 @@ def _focused_element_identity(elem):
 def _fetch_tada_config(base_url: str = "http://localhost:8000") -> dict:
     """Fetch tabracadabra config from Tada settings. Falls back to env vars on error."""
     defaults = {
-        "model": os.getenv("MODEL", "gemini/gemini-3.1-flash-lite-preview"),
+        "model": os.getenv("MODEL", DEFAULT_TABRACADABRA_MODEL),
         "api_key": os.getenv("LLM_API_KEY", ""),
         "tada_base_url": base_url,
     }

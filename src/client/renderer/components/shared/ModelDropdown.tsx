@@ -1,23 +1,13 @@
 import React, { useState, useEffect, useRef } from "react";
+import {
+  LLM_MODELS,
+  AGENT_MODELS,
+  TINKER_MODELS,
+  type ModelOption,
+} from "../../../shared/modelCatalog";
 
-export interface ModelOption {
-  value: string;
-  label: string;
-}
-
-export const LLM_MODELS: ModelOption[] = [
-  { value: "gemini/gemini-3.1-flash-lite-preview",  label: "Gemini 3.1 Flash-Lite Preview" },
-];
-
-export const AGENT_MODELS: ModelOption[] = [
-  { value: "gemini/gemini-3-flash-preview",          label: "Gemini 3 Flash Preview" },
-  { value: "anthropic/claude-sonnet-4-6",            label: "Claude Sonnet 4.6" },
-  { value: "gemini/gemini-3.1-pro-preview",          label: "Gemini 3.1 Pro Preview" },
-];
-
-export const TINKER_MODELS: ModelOption[] = [
-  { value: "Qwen/Qwen3-VL-30B-A3B-Instruct", label: "Qwen3-VL-30B-A3B" },
-];
+export type { ModelOption };
+export { LLM_MODELS, AGENT_MODELS, TINKER_MODELS };
 
 interface Props {
   value: string;

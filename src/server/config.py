@@ -6,6 +6,8 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
+from shared.model_catalog import default_model
+
 CONFIG_PATH = Path(os.environ.get("TADA_CONFIG_PATH", "tada-config.json"))
 CONFIG_DEFAULTS_PATH = Path(
     os.environ.get(
@@ -15,9 +17,9 @@ CONFIG_DEFAULTS_PATH = Path(
 )
 
 # Default model identifiers — single source of truth for Python.
-DEFAULT_LLM_MODEL = "gemini/gemini-3.1-flash-lite-preview"
-DEFAULT_TINKER_MODEL = "Qwen/Qwen3-VL-30B-A3B-Instruct"
-DEFAULT_AGENT_MODEL = "gemini/gemini-3-flash-preview"
+DEFAULT_LLM_MODEL = default_model("llm")
+DEFAULT_TINKER_MODEL = default_model("tinker")
+DEFAULT_AGENT_MODEL = default_model("agent")
 
 # Fields exposed via GET/PUT /api/settings (the UI settings panel).
 SETTINGS_API_FIELDS: frozenset[str] = frozenset({

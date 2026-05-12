@@ -32,11 +32,14 @@ from user_models.powernap.longnap.trainer_utils import (
     TASK_DESCRIPTION_WITH_IMAGES, TASK_DESCRIPTION_MIXED,
     build_actions_block, build_context_block, collect_dense_captions,
 )
+from shared.model_catalog import default_model
 
 import wandb
 import pandas as pd
 
 logger = logging.getLogger(__name__)
+DEFAULT_TINKER_MODEL = default_model("tinker")
+DEFAULT_REWARD_LLM = default_model("llm")
 
 
 def make_sample(
@@ -105,8 +108,8 @@ class OnlineEnvTrainer:
     def __init__(
         self,
         data_manager=None,
-        model_name: str = "Qwen/Qwen3-VL-30B-A3B-Instruct",
-        reward_llm: str = "gemini/gemini-3.1-flash-lite-preview",
+        model_name: str = DEFAULT_TINKER_MODEL,
+        reward_llm: str = DEFAULT_REWARD_LLM,
         reward_llm_api_key: str = "",
         num_generations: int = 8,
         learning_rate: float = 1e-5,
@@ -737,4 +740,3 @@ class OnlineEnvTrainer:
 
         self._step += 1
         return metrics
-

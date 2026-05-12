@@ -5,11 +5,13 @@ from typing import Callable
 
 import litellm
 
+from shared.model_catalog import default_model
+
 from .base_tool import BaseTool
 
 
 class CompactTool(BaseTool):
-    def __init__(self, transcript_dir: Path, summarizer: Callable[[str], str], model: str = "anthropic/claude-sonnet-4-20250514"):
+    def __init__(self, transcript_dir: Path, summarizer: Callable[[str], str], model: str = default_model("compact")):
         """
         transcript_dir: where to save conversation transcripts.
         summarizer: callable(text) -> summary string (wraps the LLM call).

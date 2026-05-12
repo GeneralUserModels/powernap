@@ -1,0 +1,44 @@
+{
+  "models": {
+    "gemini_flash_lite": {
+      "value": "gemini/gemini-3.1-flash-lite",
+      "label": "Gemini 3.1 Flash-Lite"
+    },
+    "gemini_agent_flash": {
+      "value": "gemini/gemini-3-flash-preview",
+      "label": "Gemini 3 Flash Preview"
+    },
+    "claude_sonnet": {
+      "value": "anthropic/claude-sonnet-4-6",
+      "label": "Claude Sonnet 4.6"
+    },
+    "gemini_pro": {
+      "value": "gemini/gemini-3.1-pro-preview",
+      "label": "Gemini 3.1 Pro Preview"
+    },
+    "qwen_tinker": {
+      "value": "Qwen/Qwen3-VL-30B-A3B-Instruct",
+      "label": "Qwen3-VL-30B-A3B"
+    }
+  },
+  "groups": {
+    "llm": [
+      "gemini_flash_lite"
+    ],
+    "agent": [
+      "gemini_agent_flash",
+      "claude_sonnet",
+      "gemini_pro"
+    ],
+    "tinker": [
+      "qwen_tinker"
+    ]
+  },
+  "defaults": {
+    "llm": "gemini_flash_lite",
+    "title": "gemini_flash_lite",
+    "agent": "gemini_agent_flash",
+    "compact": "gemini_agent_flash",
+    "tinker": "qwen_tinker"
+  }
+}

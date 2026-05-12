@@ -38,6 +38,7 @@ from agent.tools import (
 from agent.tools.compact import CompactTool
 from chat import ChatAgent
 from server.config import DEFAULT_AGENT_MODEL
+from shared.model_catalog import default_model as catalog_default_model, model_values
 
 # Effort caps the agent's *output* tokens (its generated text + tool-call args).
 # This is a better proxy than turns for "how much agent work this response can
@@ -50,11 +51,7 @@ DEFAULT_EFFORT = "medium"
 # this just prevents pathological infinite-tool-call loops.
 SAFETY_MAX_ROUNDS = 40
 
-AVAILABLE_MODELS = [
-    DEFAULT_AGENT_MODEL,
-    "anthropic/claude-sonnet-4-6",
-    "gemini/gemini-3.1-pro-preview",
-]
+AVAILABLE_MODELS = model_values("agent")
 DEFAULT_MODEL = DEFAULT_AGENT_MODEL
 
 _PROMPTS = Path(__file__).parent / "prompts"
@@ -202,7 +199,7 @@ def update_session_meta(state, session_id: str, **fields) -> dict | None:
     return meta
 
 
-TITLE_MODEL = "gemini/gemini-3.1-flash-lite-preview"
+TITLE_MODEL = catalog_default_model("title")
 
 
 async def generate_title(state, content: str) -> str:
