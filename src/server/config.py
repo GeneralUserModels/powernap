@@ -46,7 +46,7 @@ SETTINGS_API_FIELDS: frozenset[str] = frozenset({
 _PERSISTED_FIELDS = SETTINGS_API_FIELDS | {
     "model_type",
     "connector_errors", "mcp_connectors",
-    "onboarding_complete", "onboarding_steps_seen",
+    "onboarding_complete", "onboarding_steps_seen", "background_work_deferred_until",
     "memory_enabled", "memory_agent_model", "memory_agent_api_key", "memory_schedule",
     "tada_dir", "moments_agent_model", "moments_agent_api_key", "moments_discovery_schedule", "moments_enabled",
     "moments_executor_concurrency",
@@ -208,6 +208,10 @@ class ServerConfig(BaseModel):
 
     # Onboarding completion flag (set by POST /api/onboarding/finalize)
     onboarding_complete: bool = False
+
+    # First-install quiet period: memory + Tada agent work should not start
+    # immediately after onboarding.
+    background_work_deferred_until: str = ""
 
     # Step IDs the user has finished in any onboarding run. Used to detect
     # when a newer app version has added steps the user has not yet seen,

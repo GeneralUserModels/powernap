@@ -3,11 +3,16 @@
 import asyncio
 import os
 import time
+from datetime import datetime
 from pathlib import Path
 
 from fastapi import APIRouter, Request
 from pydantic import BaseModel
-from server.services import start_services, _log_startup_failure
+from server.services import (
+    BACKGROUND_WORK_FRESH_INSTALL_DELAY,
+    start_services,
+    _log_startup_failure,
+)
 from connectors.screen.napsack.recorder import SCREEN_FRAME_HEARTBEAT
 
 router = APIRouter(prefix="/api", tags=["onboarding"])
@@ -45,7 +50,12 @@ async def onboarding_finalize(request: Request):
     PUT /api/settings during the connectors step.
     """
     state = request.app.state.server
+    was_complete = state.config.onboarding_complete
     state.config.onboarding_complete = True
+    if not was_complete and not state.config.background_work_deferred_until:
+        state.config.background_work_deferred_until = (
+            datetime.now() + BACKGROUND_WORK_FRESH_INSTALL_DELAY
+        ).isoformat()
     state.config.save()
     task = asyncio.create_task(start_services(state))
     task.add_done_callback(_log_startup_failure)

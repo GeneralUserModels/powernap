@@ -5,6 +5,7 @@ import logging
 import os
 import sys
 import time
+from datetime import datetime, timedelta
 
 from server.state import ServerState
 from server.feature_flags import is_enabled
@@ -20,6 +21,7 @@ logger = logging.getLogger(__name__)
 # Mirrors the freshness threshold in /api/services/status so the server-side
 # wait matches what the renderer's "Getting ready" screen considers ready.
 _BOOT_FRAME_FRESH_S = 5.0
+BACKGROUND_WORK_FRESH_INSTALL_DELAY = timedelta(hours=12)
 
 
 def _log_startup_failure(task: asyncio.Task) -> None:
@@ -124,6 +126,21 @@ async def start_services(state: ServerState) -> None:
     await init_model(state)
     state.model.training_task = asyncio.create_task(run_training_service(state))
     logger.info("Training service started (%s mode)", state.config.model_type)
+
+    if state.config.background_work_deferred_until:
+        try:
+            deferred_until = datetime.fromisoformat(state.config.background_work_deferred_until)
+            if deferred_until.tzinfo is not None:
+                deferred_until = deferred_until.astimezone().replace(tzinfo=None)
+            delay_s = (deferred_until - datetime.now()).total_seconds()
+        except ValueError:
+            delay_s = 0
+        if delay_s > 0:
+            logger.info(
+                "Memory/Tada background work deferred until %s",
+                deferred_until.isoformat(timespec="seconds"),
+            )
+            await asyncio.sleep(delay_s)
 
     if is_enabled(state.config, "memory") and state.config.memory_enabled:
         from apps.memory.service import run_memory_service
