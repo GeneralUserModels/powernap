@@ -16,9 +16,9 @@ import asyncio
 import time as _time
 
 from apps.moments.runtime.execute import _parse_frontmatter as parse_frontmatter
-from apps.moments.runtime.execute import run as execute_moment
 from apps.moments.core.paths import find_task_md, get_topic, list_task_files
 from apps.moments.runtime.scheduler import save_run, load_run_history
+from server.process_jobs import relay_worker_event
 from apps.moments.core.state import (
     load_state,
     save_state,
@@ -120,48 +120,20 @@ def _resolve_output_page(tada_dir: Path, slug: str, page_path: str) -> Path | No
     return target
 
 
-@router.get("/tasks")
-async def list_tasks(request: Request):
-    """List all accepted moments from logs-tada/<topic>/*.md."""
-    tada_dir = _get_tada_dir(request)
-    if not tada_dir.exists():
-        return []
-    tasks = []
-    for md_file in list_task_files(tada_dir):
-        fm = parse_frontmatter(md_file.read_text())
-        cadence = fm.get("cadence", "")
-        if cadence not in ("once", "scheduled", "trigger"):
-            continue
-        tasks.append({
-            "slug": md_file.stem,
-            "title": fm.get("title", md_file.stem),
-            "description": fm.get("description", ""),
-            "cadence": cadence,
-            "schedule": fm.get("schedule", ""),
-            "trigger": fm.get("trigger", ""),
-            "confidence": float(fm.get("confidence", 0)),
-            "usefulness": int(fm.get("usefulness", 0)),
-            "topic": get_topic(md_file, tada_dir),
-        })
-    return tasks
-
-
-@router.get("/results")
-async def list_results(request: Request, include_dismissed: bool = False):
-    """List completed moment results, sorted by most recent first."""
-    tada_dir = _get_tada_dir(request)
+def _list_results_data(tada_dir: Path, include_dismissed: bool) -> list[dict]:
     results_dir = tada_dir / "results"
     if not results_dir.exists():
         return []
 
     all_state = load_state(tada_dir)
-    # Build slug -> topic map once so each result row can carry its topic
-    # without re-globbing per slug.
+    # Build slug -> topic/frontmatter maps once so each result row can carry
+    # metadata without re-globbing per slug.
+    task_files = list_task_files(tada_dir)
     slug_topics: dict[str, str] = {
-        md.stem: get_topic(md, tada_dir) for md in list_task_files(tada_dir)
+        md.stem: get_topic(md, tada_dir) for md in task_files
     }
     slug_frontmatter: dict[str, dict] = {
-        md.stem: parse_frontmatter(md.read_text()) for md in list_task_files(tada_dir)
+        md.stem: parse_frontmatter(md.read_text()) for md in task_files
     }
     results = []
     for meta_path in results_dir.glob("*/meta.json"):
@@ -211,22 +183,62 @@ async def list_results(request: Request, include_dismissed: bool = False):
             **slug_state,
         })
 
-    # Pinned first, then by completed_at descending
+    # Pinned first, then by completed_at descending.
     results.sort(key=lambda r: (not r["pinned"], r["completed_at"]), reverse=False)
     results.sort(key=lambda r: r["completed_at"], reverse=True)
     results.sort(key=lambda r: not r["pinned"])
     return results
 
 
+def _list_result_pages_data(tada_dir: Path, slug: str) -> list[dict] | None:
+    result_dir = tada_dir / "results" / slug
+    pages = _list_output_pages(result_dir)
+    if not pages:
+        return None
+    output_pages_dir = _output_pages_dir(result_dir)
+    return [_page_meta(path, output_pages_dir) for path in pages]
+
+
+@router.get("/tasks")
+async def list_tasks(request: Request):
+    """List all accepted moments from logs-tada/<topic>/*.md."""
+    tada_dir = _get_tada_dir(request)
+    if not tada_dir.exists():
+        return []
+    tasks = []
+    for md_file in list_task_files(tada_dir):
+        fm = parse_frontmatter(md_file.read_text())
+        cadence = fm.get("cadence", "")
+        if cadence not in ("once", "scheduled", "trigger"):
+            continue
+        tasks.append({
+            "slug": md_file.stem,
+            "title": fm.get("title", md_file.stem),
+            "description": fm.get("description", ""),
+            "cadence": cadence,
+            "schedule": fm.get("schedule", ""),
+            "trigger": fm.get("trigger", ""),
+            "confidence": float(fm.get("confidence", 0)),
+            "usefulness": int(fm.get("usefulness", 0)),
+            "topic": get_topic(md_file, tada_dir),
+        })
+    return tasks
+
+
+@router.get("/results")
+async def list_results(request: Request, include_dismissed: bool = False):
+    """List completed moment results, sorted by most recent first."""
+    tada_dir = _get_tada_dir(request)
+    return await asyncio.to_thread(_list_results_data, tada_dir, include_dismissed)
+
+
 @router.get("/results/{slug}/pages")
 async def list_result_pages(slug: str, request: Request):
     """List markdown pages for a completed moment result."""
-    result_dir = _get_tada_dir(request) / "results" / slug
-    pages = _list_output_pages(result_dir)
-    if not pages:
+    data = await asyncio.to_thread(_list_result_pages_data, _get_tada_dir(request), slug)
+    if data is None:
         return JSONResponse({"error": "not found"}, status_code=404)
-    output_pages_dir = _output_pages_dir(result_dir)
-    return [_page_meta(path, output_pages_dir) for path in pages]
+    return data
 
 
 @router.get("/results/{slug}/pages/{page_path:path}")
@@ -363,19 +375,33 @@ async def rerun_moment(slug: str, request: Request):
                 await state.broadcast_activity(
                     activity_key, run_msg, slug=slug, cadence=effective_cadence,
                 )
-                on_round = state.make_round_callback(
-                    activity_key, run_msg, slug=slug, cadence=effective_cadence,
-                )
                 try:
-                    success = await asyncio.to_thread(
-                        execute_moment, str(task_path), output_dir, logs_dir, model,
-                        cadence_override=cadence_override, schedule_override=sched_override,
-                        api_key=api_key,
-                        last_run_at=run_history.get(slug),
-                        on_round=on_round,
-                        subagent_model=subagent_model,
-                        subagent_api_key=subagent_api_key,
+                    result = await state.background_job_runner.run(
+                        "moments.execute",
+                        {
+                            "task_path": str(task_path),
+                            "output_dir": output_dir,
+                            "logs_dir": logs_dir,
+                            "model": model,
+                            "cadence_override": cadence_override,
+                            "schedule_override": sched_override,
+                            "api_key": api_key,
+                            "last_run_at": run_history.get(slug),
+                            "subagent_model": subagent_model,
+                            "subagent_api_key": subagent_api_key,
+                            "activity": {
+                                "agent": activity_key,
+                                "message": run_msg,
+                                "slug": slug,
+                                "cadence": effective_cadence,
+                            },
+                        },
+                        on_event=lambda event: relay_worker_event(state, event),
                     )
+                    success = bool(result.get("success"))
+                except Exception:
+                    logger.exception("Moment rerun worker failed: %s", slug)
+                    success = False
                 finally:
                     await state.broadcast_activity(activity_key)
                 completed_at = _time.time()

@@ -7,7 +7,7 @@ import logging
 from pathlib import Path
 
 from server.feature_flags import is_enabled
-from apps.moments.core.incremental import write_checkpoint
+from server.process_jobs import relay_worker_event
 
 logger = logging.getLogger(__name__)
 
@@ -79,15 +79,14 @@ async def run_moments_discovery(state) -> None:
 
     logger.info("Moments discovery service started")
 
-    # Signal handlers require main thread — pre-init before to_thread.
+    # Keep the server-side sandbox ready for lightweight service setup; heavy
+    # agent work initializes its own sandbox inside the background worker.
     from agent.builder import _ensure_sandbox_async
-    from apps.moments.core.candidates import discovery_state_dir
     logs_dir = str(Path(state.config.log_dir).resolve())
     tada_path = Path(state.config.tada_dir).resolve()
     tada_dir = str(tada_path)
     await _ensure_sandbox_async([tada_dir])
 
-    state_dir = discovery_state_dir(tada_path)
     run_checkpoint = tada_path / ".last_run"
 
     while True:
@@ -108,35 +107,24 @@ async def run_moments_discovery(state) -> None:
             subagent_api_key = cfg.resolve_api_key("subagent_api_key") if cfg.subagent_model else None
 
             try:
-                logger.info("Discovery: finding candidate moments")
-                await state.broadcast_activity("moments_discovery", "Discovering Tadas…")
-                try:
-                    discovery_summary = await asyncio.to_thread(
-                        MomentsDiscovery(logs_dir, model, api_key, subagent_model, subagent_api_key).run,
-                        write_run_checkpoint=False,
-                    )
-                    logger.info("Discovery complete:\n%s", discovery_summary)
-                except Exception:
-                    logger.exception("Discovery failed; skipping promotion and triggers")
-                    continue
-
-                logger.info("Discovery: promoting candidates")
-                await state.broadcast_activity("moments_discovery", "Promoting Tadas…")
-                promotion_summary = await asyncio.to_thread(
-                    TaskFilter(logs_dir, model, api_key, subagent_model, subagent_api_key).run,
-                    write_run_checkpoint=False,
+                logger.info("Discovery: running worker pipeline")
+                result = await state.background_job_runner.run(
+                    "moments.discovery",
+                    {
+                        "logs_dir": logs_dir,
+                        "model": model,
+                        "api_key": api_key,
+                        "subagent_model": subagent_model,
+                        "subagent_api_key": subagent_api_key,
+                        "run_checkpoint": str(run_checkpoint),
+                    },
+                    on_event=lambda event: relay_worker_event(state, event),
                 )
-                logger.info("Promotion complete:\n%s", promotion_summary)
-
-                logger.info("Discovery: evaluating triggers")
-                await state.broadcast_activity("moments_discovery", "Checking Triggers…")
-                trigger_summary = await asyncio.to_thread(
-                    TriggersCheck(logs_dir, model, api_key, subagent_model, subagent_api_key).run,
-                )
-                logger.info("Trigger check complete:\n%s", trigger_summary)
-
-                write_checkpoint(run_checkpoint)
-                logger.info("Discovery pipeline complete")
+                if result.get("success"):
+                    summaries = result.get("summaries") or {}
+                    logger.info("Discovery pipeline complete:\n%s", summaries)
+                else:
+                    logger.warning("Discovery worker returned unsuccessful result: %s", result)
             finally:
                 await state.broadcast_activity("moments_discovery")
 

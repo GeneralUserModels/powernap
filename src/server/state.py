@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from typing import Callable
 
 from server.config import ServerConfig
+from server.process_jobs import ProcessJobRunner
 from user_models.model_state import ModelState
 
 
@@ -36,6 +37,7 @@ class ServerState:
     # scheduler from re-dispatching the same slug while a prior task is still
     # waiting to acquire a slot.
     moments_in_flight_slugs: set = field(default_factory=set)
+    background_job_runner: ProcessJobRunner = field(default_factory=ProcessJobRunner)
 
     @property
     def moments_executor_sem(self) -> asyncio.BoundedSemaphore:

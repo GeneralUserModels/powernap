@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 import json
+import shlex
 import sys
 import tempfile
 import unittest
@@ -16,9 +17,17 @@ if str(SRC) not in sys.path:
 from sandbox_runtime import SandboxManager, SandboxRuntimeConfig
 
 from agent.tools.edit import EditTool
-from agent.tools.read import ReadTool
+from agent.tools.read import OUTPUT_LIMIT as READ_OUTPUT_LIMIT, ReadTool
 from agent.tools.sanitize import sanitize_tool_output
+from agent.tools.terminal import OUTPUT_LIMIT as TERMINAL_OUTPUT_LIMIT, TerminalTool
 from agent.tools.write import WriteTool
+
+
+class UnsandboxedTerminalTool(TerminalTool):
+    TIMEOUT_SECONDS = 5
+
+    def _wrap_sandbox(self, command: str):
+        return command
 
 
 class AgentFileToolSandboxTests(unittest.TestCase):
@@ -137,6 +146,41 @@ class AgentFileToolSandboxTests(unittest.TestCase):
             self.assertIn("caption", output)
             self.assertNotIn("mouse_scroll", output)
             self.assertNotIn("raw_events", output)
+
+    def test_read_file_truncates_long_single_line_with_warning(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "large.txt"
+            path.write_text(("x" * (READ_OUTPUT_LIMIT + 1000)) + "SENTINEL_END")
+
+            output = ReadTool().run(str(path))
+
+            self.assertLessEqual(len(output), READ_OUTPUT_LIMIT)
+            self.assertIn("Warning: file output truncated", output)
+            self.assertIn(f"after {READ_OUTPUT_LIMIT} bytes", output)
+            self.assertNotIn("SENTINEL_END", output)
+
+    def test_read_file_limit_returns_bounded_lines_with_warning(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "lines.txt"
+            path.write_text("one\ntwo\nthree\n")
+
+            output = ReadTool().run(str(path), limit=2)
+
+            self.assertIn("one", output)
+            self.assertIn("two", output)
+            self.assertNotIn("three", output)
+            self.assertIn("Warning: file output truncated after 2 lines", output)
+
+    def test_bash_truncates_large_output_with_warning(self):
+        command = (
+            f"{shlex.quote(sys.executable)} -c "
+            f"\"import sys; sys.stdout.write('x' * {TERMINAL_OUTPUT_LIMIT + 10000})\""
+        )
+
+        output = UnsandboxedTerminalTool().run(command)
+
+        self.assertLessEqual(len(output), TERMINAL_OUTPUT_LIMIT)
+        self.assertIn("Warning: command output truncated", output)
 
 
 if __name__ == "__main__":

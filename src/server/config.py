@@ -197,7 +197,7 @@ class ServerConfig(BaseModel):
     # Max number of tada executions running concurrently. Higher values reduce
     # wall-clock latency for due tadas but multiply LLM spend and can hit
     # provider rate limits — tune downward if you see 429s or cost spikes.
-    moments_executor_concurrency: int = 5
+    moments_executor_concurrency: int = 3
 
     # Connectors: names of connectors that are enabled (running)
     enabled_connectors: list[str] = Field(default_factory=list)
