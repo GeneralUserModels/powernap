@@ -29,7 +29,7 @@ Here are some examples of strong forward-looking ideas:
 - Recurring digest or review: if the activity reveals a steady rhythm the user re-encounters (morning briefing, weekly 1:1 prep, end-of-week review, regular status update, periodic project check-in), propose a scheduled artifact that fits that cadence. The artifact should still feel fresh on each run, not stale or noisy.
 
 Select ruthlessly. Return 0-2 FOCUSED candidates per chunk, keep separate activity clusters separate, and reject isolated sparse leads rather than inflating them into moments.
-Make sure the candidates haven't already been completed by the user (look through logs) or another moment.
+Make sure each candidate is genuinely new — not already completed by the user (see "Skip Completed Work" below) and not covered by another moment.
 
 ## Cadence And Frequency
 
@@ -46,6 +46,14 @@ Choosing frequency:
 - Match the schedule to evidence. If the user reviews something every Monday morning, propose `Monday at 8am`, not `daily`. Do not invent a cadence the activity does not support.
 - Do not promote a one-time prep task into a recurring schedule just because it could be repeated. Recurrence must add ongoing value, not noise.
 - Avoid duplicating an existing accepted scheduled moment with the same rhythm and scope.
+
+## Skip Completed Work
+
+Propose a candidate only when the need is still ahead of the user. Before proposing, check the END of the activity trajectory, not just the middle — if the thread already resolves within the activity window, the work is done.
+
+Treat as done: email sent, doc published or submitted, PR merged, purchase or booking confirmed, a decision visibly reached, an event or trip already past, a file exported or delivered.
+
+Exception: if the user finished one instance of something genuinely recurring, a `scheduled` moment for the next occurrence is still valid — but never a `once` moment for the instance they already completed.
 
 ## Sources
 
