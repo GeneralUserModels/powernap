@@ -73,7 +73,7 @@ Plan the ingest using the lists, metadata, previews, and any discovery needed fo
 
 For first runs, discovery is expected: inspect the available source layout, sample useful source files, and identify the strongest starter pages across stable categories. For incremental runs, prioritize the new inputs while also naming adjacent existing pages and a small backfill sample when useful. For no-new-data runs, use discovery for enrichment, cross-linking, category coverage, and coverage checks against the existing wiki.
 
-When planning discovery, explicitly consider prior chats under `chats/`, active conversations under `active-conversations/`, and Tada task/result artifacts under `{logs_dir}/../logs-tada/`. These sources often contain richer interaction data than the changed-input preview and should be included when they are likely to reveal page-worthy people, projects, workstreams, tools, decisions, or recurring themes.
+When planning discovery, explicitly consider prior chats under `chats/`, active conversations under `active-conversations/`, and Tada task/result artifacts under `{tada_dir}/`. These sources often contain richer interaction data than the changed-input preview and should be included when they are likely to reveal page-worthy people, projects, workstreams, tools, decisions, or recurring themes.
 
 Summarize a focused ingest plan for the next passes.
 

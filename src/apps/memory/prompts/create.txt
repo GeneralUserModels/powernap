@@ -60,19 +60,19 @@ Do not delete existing wiki pages during normal page updates. Update, split, or 
 
 ## Source Rules
 
-All source data lives under `{logs_dir}/`, except Tada artifacts under `{logs_dir}/../logs-tada/`.
+All source data lives under `{logs_dir}/`, except Tada artifacts under `{tada_dir}/`.
 
 Highest-signal first-person sources:
 - `active-conversations/conversation_*.md`: direct user answers about beliefs, intentions, values, habits, emotions, relationships, and self-perception.
 - `chats/<session_id>/conversation.md`: prior chats with the assistant. The user's questions and follow-ups reveal preferences, projects, concerns, and recurring needs.
 - `audio/*.md`: voice transcripts from meetings, calls, notes, or conversations.
-- `{logs_dir}/../logs-tada/<topic>/*.md`: accepted Tada task specs. These show what the user thought was worth tracking, researching, preparing, or repeating.
-- `{logs_dir}/../logs-tada/results/<slug>/`: generated Tada outputs, research notes, briefs, dashboards, and other finished artifacts. These are dense summaries of user-relevant work and should be searched when looking for projects, people, themes, or prior research.
-- `{logs_dir}/../logs-tada/results/*/feedback_*.md`: user feedback on generated moments.
+- `{tada_dir}/<topic>/*.md`: accepted Tada task specs. These show what the user thought was worth tracking, researching, preparing, or repeating.
+- `{tada_dir}/results/<slug>/`: generated Tada outputs, research notes, briefs, dashboards, and other finished artifacts. These are dense summaries of user-relevant work and should be searched when looking for projects, people, themes, or prior research.
+- `{tada_dir}/results/*/feedback_*.md`: user feedback on generated moments.
 
 Memex source discovery priority:
 - Always consider prior chats (`chats/`) and active conversations (`active-conversations/`) when looking for page-worthy people, projects, themes, preferences, or repeated questions.
-- Always consider Tada tasks and results (`{logs_dir}/../logs-tada/`) when looking for page-worthy workstreams, research areas, recurring briefs, collaborators, tools, and decisions.
+- Always consider Tada tasks and results (`{tada_dir}/`) when looking for page-worthy workstreams, research areas, recurring briefs, collaborators, tools, and decisions.
 - Do not stop at the changed-input preview if it points to a person, project, or theme that likely has richer context in chats or Tadas; do a bounded targeted search there.
 
 Behavioral and contextual sources:

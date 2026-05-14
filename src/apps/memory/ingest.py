@@ -667,6 +667,7 @@ def _base_prompt_context(now: str, logs_dir: str, memory_dir: Path) -> dict[str,
     return {
         "now": now,
         "logs_dir": logs_dir,
+        "tada_dir": str(Path(logs_dir).parent / "logs-tada"),
         "memory_dir": str(memory_dir),
     }
 
@@ -679,6 +680,7 @@ def _inventory_prompt(now: str, logs_dir: str, memory_dir: Path, inputs: IngestI
     return INVENTORY_TEMPLATE.format(
         now=now,
         logs_dir=logs_dir,
+        tada_dir=str(Path(logs_dir).parent / "logs-tada"),
         memory_dir=str(memory_dir),
         mode=inputs.mode,
         last_run_date=last_run_text,
