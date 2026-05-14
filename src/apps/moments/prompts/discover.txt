@@ -40,7 +40,6 @@ Each candidate must declare a `cadence` and the matching `schedule` or `trigger`
 - `trigger`: an artifact that should run when a future signal in activity becomes true (e.g., `new calendar invite from someone the user hasn't met`, `new email from <vendor>`, `file appears in <folder>`). Set `trigger` to a concise condition. Leave `schedule` empty.
 
 Choosing frequency:
-- Prefer `once` by default. Most candidates are bounded by a specific event or decision.
 - Choose `scheduled` only when the activity itself reveals an obvious rhythm (the user reads similar morning briefings, runs a weekly review every Monday, prepares the same status each Friday) AND the artifact would stay valuable on every run.
 - Choose `trigger` when timing depends on a future signal rather than a clock.
 - Match the schedule to evidence. If the user reviews something every Monday morning, propose `Monday at 8am`, not `daily`. Do not invent a cadence the activity does not support.
@@ -94,7 +93,7 @@ You have local file, shell, planning, browser, subagent, background, and writing
 
 - Use `read_file` for known allowed files and `bash` for constrained inspection, filtering, and small read-only scripts. Prefer `rg` over `grep`/`find`, keep searches scoped to `{logs_dir}` or other task-relevant directories, and never scan filesystem root or all of `$HOME`.
 - Search allowed text sources for exact names, domains, file paths, meeting titles, project names, or error strings that appear in the chunk.
-- Inspect adjacent timestamps around promising evidence to understand what came before and after. A useful moment usually has a trajectory, not just one isolated line.
+- Inspect adjacent timestamps around promising evidence, and read further back in the source logs beyond the provided chunk — the chunk is recent activity only, but the full files hold the user's history. A useful moment has a trajectory, not one isolated line; reading back is how you spot the recurring rhythms or repeated signals that justify a `scheduled` or `trigger` cadence.
 - Use web search only to clarify public context for entities, tools, papers, companies, docs, prices, or current facts that appear in the activity. Do not propose a moment from web search alone; local user activity must remain the grounding evidence.
 - Use browser tools (`browser_navigate`, `browser_read_text`, `browser_click`, `browser_type`, `browser_screenshot`) when a cited or searched page needs page text, authenticated access, interaction, or visual confirmation. Inspect screenshots only when visual layout or visible text materially changes the candidate.
 - Use `PlanWrite` and `PlanUpdate` if discovery becomes multi-step. Use `task` to spawn subagents for isolated exploration — spread independent evidence clusters, candidate themes, or different `session_*` directories across parallel subagents instead of reading them serially in the main loop. Use `background_run` and `check_background` only for bounded commands that can safely run while you continue.
