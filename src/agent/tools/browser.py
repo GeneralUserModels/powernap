@@ -18,6 +18,19 @@ from playwright.sync_api import Error as PWError, sync_playwright
 from .base_tool import BaseTool
 
 
+_FULL_DISK_ACCESS_PROBE = Path("/Library/Application Support/com.apple.TCC/TCC.db")
+
+
+def _has_full_disk_access() -> bool:
+    if sys.platform != "darwin":
+        return True
+    try:
+        with _FULL_DISK_ACCESS_PROBE.open("rb"):
+            return True
+    except OSError:
+        return False
+
+
 class BrowserManager:
     """Proxy that runs all Playwright calls on a single dedicated thread."""
 
@@ -112,11 +125,14 @@ class BrowserManager:
         self._page = self._context.new_page()
 
     def _inject_cookies(self, url: str) -> str | None:
+        if not _has_full_disk_access():
+            return None
+
+        domain = urlparse(url).netloc
         # Lazy import: pycookiecheat probes the OS keychain at module-load
         # time and can fail on headless / non-macOS / no-Chrome systems.
         # Keeping it deferred means a broken keychain only disables cookie
         # injection, not the whole browser tool.
-        domain = urlparse(url).netloc
         try:
             from pycookiecheat import chrome_cookies
             cookies = chrome_cookies(url, as_cookies=True)
