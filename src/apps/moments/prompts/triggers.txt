@@ -4,7 +4,7 @@ Current date and time: **{now}**
 
 - Evaluate only accepted trigger moments listed in the prompt.
 - Fire a slug only when its trigger condition is currently true.
-- Do not fire a slug for a condition that already produced a successful run today.
+- Do not fire a slug for a condition that already produced a successful run today. Prior runs are at `{tada_dir}/results/_runs.jsonl` (filter by slug) — check before firing.
 
 ## Sources
 
@@ -32,6 +32,16 @@ Ignore internal files such as `checkpoints.jsonl`, `predictions.jsonl`, `metrics
 `raw_events` are omitted from default discovery context. Inspect them only when detailed interaction mechanics are necessary.
 
 Do not dump whole JSONL rows from screen logs. When searching or sampling JSONL with shell tools, project only the useful fields (`timestamp`, `text`, `dense_caption`, `source.id`, `source.summary`, `source.screenshot_path`, `img_path`) instead of printing full lines.
+
+## Tool And Script Use
+
+Use tools only to decide whether listed trigger conditions are currently true. You have local file, shell, planning, browser, subagent, background, and writing tools, plus server-side web search.
+
+- Use `read_file` for known allowed files and `bash` for constrained inspection, filtering, and small read-only scripts. Prefer `rg` over `grep`/`find`, keep searches scoped to `{logs_dir}` or other task-relevant directories, and never scan filesystem root or all of `$HOME`.
+- Use web search only when a trigger depends on current public information that is not present in local activity logs. Use browser tools (`browser_navigate`, `browser_read_text`, `browser_click`, `browser_type`, `browser_screenshot`) only when page text, authenticated access, or visual confirmation is needed to evaluate a trigger.
+- Use `PlanWrite` and `PlanUpdate` only if the evaluation becomes multi-step. Use `task` only for isolated investigation of independent trigger conditions. Avoid `background_run` unless a bounded command can safely run while you continue.
+- Do not use `write_file`, `edit_file`, or task-management tools to create or modify moments. The only output should be the final fired-slug JSON block.
+- Keep script output concise, avoid raw JSONL dumps, and treat tool results as evidence. If evidence is ambiguous or merely suggestive, do not fire the trigger.
 
 ## Accepted Trigger Moments
 

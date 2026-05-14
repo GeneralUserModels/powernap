@@ -61,6 +61,7 @@ def run(
         INSTRUCTION_TEMPLATE.format(
             now=now,
             logs_dir=logs_dir,
+            tada_dir=str(tada_dir),
             triggered_tasks_list=listing,
         )
     )

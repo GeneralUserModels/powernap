@@ -234,7 +234,7 @@ class BrowserManager:
 class BrowserNavigateTool(BaseTool):
     def __init__(self, manager: BrowserManager):
         super().__init__("browser_navigate",
-            "Navigate to a URL in a headless browser with your Chrome cookies/sessions.",
+            "Navigate to a URL in a headless browser, optionally with your Chrome cookies/sessions when available.",
             {
                 "type": "object",
                 "properties": {
