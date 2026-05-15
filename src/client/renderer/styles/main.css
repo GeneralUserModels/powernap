@@ -506,7 +506,7 @@ body {
   flex-direction: column;
   gap: 6px;
   padding: 8px 12px;
-  margin-bottom: 12px;
+  margin-bottom: 8px;
   background: rgba(var(--sage-rgb), 0.06);
   border: 1px solid rgba(var(--sage-rgb), 0.12);
   border-radius: var(--r-md);
@@ -582,7 +582,7 @@ body {
   display: flex;
   flex-direction: column;
   padding: 8px 12px;
-  margin-bottom: 12px;
+  margin-bottom: 8px;
   background: rgba(120, 125, 118, 0.08);
   border: 1px solid rgba(120, 125, 118, 0.14);
   border-radius: var(--r-md);
