@@ -89,6 +89,23 @@ def _next_run_time(schedule: str) -> datetime | None:
     return None
 
 
+def next_scheduled_service_run(schedule: str, last_run_path: Path) -> datetime | None:
+    """Return the next time a scheduled service should run without mutating state."""
+    next_run = _next_run_time(schedule)
+    period = _schedule_period(schedule)
+    if next_run is None or period is None:
+        return None
+
+    last_run = _read_datetime(last_run_path)
+    if last_run is None:
+        return next_run
+
+    most_recent_target = next_run - period
+    if last_run < most_recent_target:
+        return datetime.now()
+    return next_run
+
+
 def load_run_history(results_dir: Path) -> dict[str, float]:
     """Load last completed run timestamp per slug from _runs.jsonl.
 
@@ -295,6 +312,70 @@ async def _execute_one_moment(
             logger.warning(f"Moment failed: {slug}")
 
 
+async def scan_due_moments_once(state) -> int:
+    """Scan accepted moments once and enqueue due executions."""
+    cfg = state.config
+    model = cfg.moments_agent_model
+    api_key = cfg.resolve_api_key("moments_agent_api_key")
+    subagent_model = cfg.subagent_model or None
+    subagent_api_key = cfg.resolve_api_key("subagent_api_key") if cfg.subagent_model else None
+
+    logs_dir = str(Path(cfg.log_dir).resolve())
+    tada_dir = Path(cfg.tada_dir).resolve()
+    if not tada_dir.exists():
+        return 0
+
+    results_dir = tada_dir / "results"
+    results_dir.mkdir(parents=True, exist_ok=True)
+    run_history = load_run_history(results_dir)
+    moment_state = load_state(tada_dir)
+    enqueued = 0
+
+    for md_file in list_task_files(tada_dir):
+        fm = parse_frontmatter(md_file.read_text())
+        cadence = fm.get("cadence", "")
+        schedule = fm.get("schedule", "")
+        if cadence not in ("once", "scheduled", "trigger"):
+            continue
+
+        slug = md_file.stem
+        if slug in state.moments_in_flight_slugs:
+            continue
+        slug_state = moment_state.get(slug, {})
+        if slug_state.get("dismissed"):
+            continue
+        effective_cadence = slug_state.get("cadence_override") or cadence
+        effective_schedule = slug_state.get("schedule_override") or schedule
+        pending = bool(slug_state.get("pending_update"))
+        if not pending and not should_run(slug, effective_cadence, effective_schedule, run_history):
+            continue
+
+        state.moments_in_flight_slugs.add(slug)
+        task = asyncio.create_task(_execute_one_moment(
+            state, md_file, slug, fm, slug_state,
+            effective_cadence, effective_schedule,
+            logs_dir, results_dir, tada_dir, model, api_key,
+            run_history.get(slug),
+            subagent_model=subagent_model,
+            subagent_api_key=subagent_api_key,
+        ))
+        state.moments_execution_tasks.add(task)
+        enqueued += 1
+
+        def _cleanup(t: asyncio.Task, s: str = slug) -> None:
+            state.moments_in_flight_slugs.discard(s)
+            state.moments_execution_tasks.discard(t)
+            if t.cancelled():
+                return
+            exc = t.exception()
+            if exc is not None:
+                logger.exception("Moment execution task crashed", exc_info=exc)
+
+        task.add_done_callback(_cleanup)
+
+    return enqueued
+
+
 async def run_moments_scheduler(state) -> None:
     """Background task: scan logs-tada/ and execute due moments concurrently.
 
@@ -318,61 +399,7 @@ async def run_moments_scheduler(state) -> None:
             if not (is_enabled(state.config, "moments") and state.config.moments_enabled):
                 continue
 
-            cfg = state.config
-            model = cfg.moments_agent_model
-            api_key = cfg.resolve_api_key("moments_agent_api_key")
-            subagent_model = cfg.subagent_model or None
-            subagent_api_key = cfg.resolve_api_key("subagent_api_key") if cfg.subagent_model else None
-
-            tada_dir = Path(state.config.tada_dir).resolve()
-            if not tada_dir.exists():
-                continue
-
-            results_dir = tada_dir / "results"
-            results_dir.mkdir(parents=True, exist_ok=True)
-            run_history = load_run_history(results_dir)
-            moment_state = load_state(tada_dir)
-
-            for md_file in list_task_files(tada_dir):
-                fm = parse_frontmatter(md_file.read_text())
-                cadence = fm.get("cadence", "")
-                schedule = fm.get("schedule", "")
-                if cadence not in ("once", "scheduled", "trigger"):
-                    continue
-
-                slug = md_file.stem
-                if slug in state.moments_in_flight_slugs:
-                    continue
-                slug_state = moment_state.get(slug, {})
-                if slug_state.get("dismissed"):
-                    continue
-                effective_cadence = slug_state.get("cadence_override") or cadence
-                effective_schedule = slug_state.get("schedule_override") or schedule
-                pending = bool(slug_state.get("pending_update"))
-                if not pending and not should_run(slug, effective_cadence, effective_schedule, run_history):
-                    continue
-
-                state.moments_in_flight_slugs.add(slug)
-                task = asyncio.create_task(_execute_one_moment(
-                    state, md_file, slug, fm, slug_state,
-                    effective_cadence, effective_schedule,
-                    logs_dir, results_dir, tada_dir, model, api_key,
-                    run_history.get(slug),
-                    subagent_model=subagent_model,
-                    subagent_api_key=subagent_api_key,
-                ))
-                state.moments_execution_tasks.add(task)
-
-                def _cleanup(t: asyncio.Task, s: str = slug) -> None:
-                    state.moments_in_flight_slugs.discard(s)
-                    state.moments_execution_tasks.discard(t)
-                    if t.cancelled():
-                        return
-                    exc = t.exception()
-                    if exc is not None:
-                        logger.exception("Moment execution task crashed", exc_info=exc)
-
-                task.add_done_callback(_cleanup)
+            await scan_due_moments_once(state)
 
         except asyncio.CancelledError:
             logger.info("Moments scheduler stopped")

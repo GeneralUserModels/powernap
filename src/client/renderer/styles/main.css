@@ -576,6 +576,70 @@ body {
   min-width: 2px;
 }
 
+/* ── Feature schedule banner (idle) ────────────────────────── */
+
+.feature-schedule-banner {
+  display: flex;
+  flex-direction: column;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+  background: rgba(120, 125, 118, 0.08);
+  border: 1px solid rgba(120, 125, 118, 0.14);
+  border-radius: var(--r-md);
+  animation: fadeSlideIn 0.2s ease;
+}
+
+.feature-schedule-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.feature-schedule-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(120, 125, 118, 0.12);
+  color: var(--text-secondary);
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.feature-schedule-text {
+  flex: 1;
+  min-width: 0;
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.feature-schedule-start {
+  flex-shrink: 0;
+  border: 1px solid rgba(120, 125, 118, 0.22);
+  background: rgba(255, 255, 255, 0.38);
+  color: var(--text-primary);
+  border-radius: 6px;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.feature-schedule-start:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.58);
+}
+
+.feature-schedule-start:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
 /* ── Sidebar activity spinner ──────────────────────────────── */
 
 .nav-activity-spinner {

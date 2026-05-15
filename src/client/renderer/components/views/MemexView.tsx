@@ -1,7 +1,9 @@
 import React, { useEffect, useState, useCallback, useMemo } from "react";
 import { useAppContext } from "../../context/AppContext";
+import { useBackgroundWork } from "../../hooks/useBackgroundWork";
 import { useMemory, WikiPage } from "../../hooks/useMemory";
 import { FeatureActivityBanner } from "../FeatureActivityBanner";
+import { FeatureScheduleBanner } from "../FeatureScheduleBanner";
 import { MarkdownContent } from "../shared/MarkdownContent";
 import {
   parseFrontmatter,
@@ -43,6 +45,7 @@ function groupByCategory(pages: WikiPage[]): Map<string, WikiPage[]> {
 export function MemexView() {
   const { state } = useAppContext();
   const memoryActivity = state.agentActivities["memory"];
+  const memoryBackground = useBackgroundWork(state.connected, "memory");
   const { pages, searchResults, status, loading, load, search: serverSearch, getPage, savePage, deletePage } = useMemory();
 
   // Navigation state
@@ -259,8 +262,18 @@ export function MemexView() {
 
   return (
     <div id="memex-view" className="view active">
-      {memoryActivity && (
+      {memoryActivity ? (
         <FeatureActivityBanner activity={memoryActivity} label="Memory" />
+      ) : memoryBackground.status && (
+        <FeatureScheduleBanner
+          label="Memex"
+          nextRunAt={memoryBackground.status.next_run_at}
+          canStart={memoryBackground.status.manual_start_allowed}
+          starting={memoryBackground.starting}
+          startFailed={memoryBackground.startFailed}
+          blockedReason={memoryBackground.status.manual_start_blocked_reason}
+          onStart={memoryBackground.startNow}
+        />
       )}
       <div className="memex-list-header">
         <div className="memex-search-wrap">

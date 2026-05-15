@@ -117,6 +117,21 @@ interface MomentResultPage {
   updated_at: string;
 }
 
+interface BackgroundWorkFeatureStatus {
+  enabled: boolean;
+  running: boolean;
+  schedule: string;
+  next_run_at: string | null;
+  last_completed_at: string | null;
+  manual_start_allowed: boolean;
+  manual_start_blocked_reason?: "disabled" | "running" | "first_run" | null;
+}
+
+interface BackgroundWorkStatusResponse {
+  memory: BackgroundWorkFeatureStatus;
+  tada: BackgroundWorkFeatureStatus;
+}
+
 interface SeekerStatus {
   has_questions: boolean;
   conversation_active: boolean;

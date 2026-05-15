@@ -33,6 +33,9 @@ class ServerState:
     moments_runs_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     # In-flight execution tasks (so we can cancel them on shutdown).
     moments_execution_tasks: set = field(default_factory=set)
+    # Manual one-shot background feature runs started via the UI.
+    background_work_tasks: set = field(default_factory=set)
+    background_work_in_flight: set[str] = field(default_factory=set)
     # Slugs currently executing or queued on the semaphore — prevents the
     # scheduler from re-dispatching the same slug while a prior task is still
     # waiting to acquire a slot.

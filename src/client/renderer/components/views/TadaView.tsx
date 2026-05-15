@@ -2,8 +2,10 @@ import React, { useEffect, useState, useRef, useCallback, useMemo } from "react"
 import { useAppContext } from "../../context/AppContext";
 import { useMoments } from "../../hooks/useMoments";
 import { useMomentFeedback } from "../../hooks/useMomentFeedback";
+import { useBackgroundWork } from "../../hooks/useBackgroundWork";
 import { ChatView } from "../ChatView";
 import { FeatureActivityBanner } from "../FeatureActivityBanner";
+import { FeatureScheduleBanner } from "../FeatureScheduleBanner";
 import { getMomentResultPage, getMomentResultPages } from "../../api/client";
 import { MarkdownContent } from "../shared/MarkdownContent";
 
@@ -470,6 +472,7 @@ function TadaMarkdownResult({ slug }: { slug: string }) {
 export function TadaView() {
   const { state } = useAppContext();
   const discoveryActivity = state.agentActivities["moments_discovery"];
+  const tadaBackground = useBackgroundWork(state.connected, "tada");
   // Each concurrent execution is broadcast as "moment_run:<slug>". Build a
   // per-slug map so we can light up multiple cards / spawn multiple
   // placeholders simultaneously.
@@ -795,11 +798,22 @@ export function TadaView() {
   const totalUnread = rawUnreadItems.length;
   const totalRunning = showDismissed ? 0 : runningItems.length + placeholderActivities.length;
   const todayLabel = new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
+  const tadaPageActivity = discoveryActivity ?? runActivities[0];
 
   return (
     <div id="tada-view" className="view active tada-list">
-      {discoveryActivity && (
-        <FeatureActivityBanner activity={discoveryActivity} label="Discovery" />
+      {tadaPageActivity ? (
+        <FeatureActivityBanner activity={tadaPageActivity} label={discoveryActivity ? "Discovery" : "Tada"} />
+      ) : tadaBackground.status && (
+        <FeatureScheduleBanner
+          label="Tada"
+          nextRunAt={tadaBackground.status.next_run_at}
+          canStart={tadaBackground.status.manual_start_allowed}
+          starting={tadaBackground.starting}
+          startFailed={tadaBackground.startFailed}
+          blockedReason={tadaBackground.status.manual_start_blocked_reason}
+          onStart={tadaBackground.startNow}
+        />
       )}
 
       <header className="tada-masthead">
