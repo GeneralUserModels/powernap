@@ -8,7 +8,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from server.state import ServerState
-from server.routes import settings, status, events
+from server.routes import background_work, settings, status, events
 from server.routes.auth import router as auth_router
 from server.routes.onboarding import router as onboarding_router
 from connectors.routes import router as connectors_router
@@ -68,6 +68,7 @@ async def lifespan(app: FastAPI):
         state.moments_discovery_task,
         state.seeker_scheduler_task,
         state.cost_logger_task,
+        *list(state.background_work_tasks),
     ]
     for task in all_tasks:
         if task and not task.done():
@@ -114,6 +115,7 @@ def create_app() -> FastAPI:
     app.include_router(moments_router)
     app.include_router(seeker_router)
     app.include_router(chat_router)
+    app.include_router(background_work.router)
     app.include_router(settings.router)
     app.include_router(status.router)
     app.include_router(user_models_router)

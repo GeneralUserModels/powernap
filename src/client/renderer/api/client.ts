@@ -104,6 +104,16 @@ export const deleteMemoryPage = (path: string) =>
 export const getMemoryStatus = () =>
   request("GET", "/api/memory/status") as Promise<{ exists: boolean; last_run: string | null; page_count: number }>;
 
+// ── Background work ─────────────────────────────────────────
+export const getBackgroundWorkStatus = () =>
+  request("GET", "/api/background-work/status") as Promise<BackgroundWorkStatusResponse>;
+
+export const startTadaBackgroundWork = () =>
+  request("POST", "/api/background-work/tada/start");
+
+export const startMemoryBackgroundWork = () =>
+  request("POST", "/api/background-work/memory/start");
+
 // ── Onboarding ───────────────────────────────────────────────
 export const getGoogleConnectorStatus = () =>
   request("GET", "/api/auth/google/status") as Promise<{ connected: boolean }>;

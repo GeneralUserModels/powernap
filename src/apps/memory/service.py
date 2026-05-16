@@ -18,6 +18,7 @@ from server.process_jobs import relay_worker_event
 logger = logging.getLogger(__name__)
 
 SCAN_INTERVAL = 60  # seconds between schedule checks
+SUCCESSFUL_RUN_MARKER = ".last_successful_run"
 
 class MemoryIngest:
     """Ingests new activity logs into the personal knowledge wiki."""
@@ -71,6 +72,43 @@ class MemoryLint:
         )
 
 
+def successful_run_marker(logs_dir: str | Path) -> Path:
+    return Path(logs_dir).resolve() / "memory" / SUCCESSFUL_RUN_MARKER
+
+
+async def run_memory_pipeline_once(state) -> bool:
+    """Run the memory ingest/lint worker once."""
+    logs_dir = str(Path(state.config.log_dir).resolve())
+    cfg = state.config
+    model = cfg.memory_agent_model
+    api_key = cfg.memory_agent_api_key or cfg.resolve_api_key("agent_api_key")
+    subagent_model = cfg.subagent_model or None
+    subagent_api_key = cfg.resolve_api_key("subagent_api_key") if cfg.subagent_model else None
+
+    try:
+        logger.info("Memory: running worker pipeline")
+        result = await state.background_job_runner.run(
+            "memory.pipeline",
+            {
+                "logs_dir": logs_dir,
+                "model": model,
+                "api_key": api_key,
+                "subagent_model": subagent_model,
+                "subagent_api_key": subagent_api_key,
+            },
+            on_event=lambda event: relay_worker_event(state, event),
+        )
+        if result.get("success"):
+            logger.info("Memory: worker pipeline complete")
+            successful_run_marker(logs_dir).write_text("")
+            await state.broadcast("memory_updated", {})
+            return True
+        logger.warning("Memory: worker pipeline returned unsuccessful result: %s", result)
+        return False
+    finally:
+        await state.broadcast_activity("memory")
+
+
 async def run_memory_service(state) -> None:
     """Background task: poll every SCAN_INTERVAL and run ingest whenever the
     most recent scheduled occurrence hasn't completed yet. Lint runs as part
@@ -97,32 +135,7 @@ async def run_memory_service(state) -> None:
             if not scheduled_service_due(schedule, run_checkpoint_file):
                 continue
 
-            cfg = state.config
-            model = cfg.memory_agent_model
-            api_key = cfg.memory_agent_api_key or cfg.resolve_api_key("agent_api_key")
-            subagent_model = cfg.subagent_model or None
-            subagent_api_key = cfg.resolve_api_key("subagent_api_key") if cfg.subagent_model else None
-
-            try:
-                logger.info("Memory: running worker pipeline")
-                result = await state.background_job_runner.run(
-                    "memory.pipeline",
-                    {
-                        "logs_dir": logs_dir,
-                        "model": model,
-                        "api_key": api_key,
-                        "subagent_model": subagent_model,
-                        "subagent_api_key": subagent_api_key,
-                    },
-                    on_event=lambda event: relay_worker_event(state, event),
-                )
-                if result.get("success"):
-                    logger.info("Memory: worker pipeline complete")
-                    await state.broadcast("memory_updated", {})
-                else:
-                    logger.warning("Memory: worker pipeline returned unsuccessful result: %s", result)
-            finally:
-                await state.broadcast_activity("memory")
+            await run_memory_pipeline_once(state)
 
         except asyncio.CancelledError:
             logger.info("Memory wiki service stopped")

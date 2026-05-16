@@ -12,6 +12,7 @@ from server.process_jobs import relay_worker_event
 logger = logging.getLogger(__name__)
 
 SCAN_INTERVAL = 60  # seconds between schedule checks
+SUCCESSFUL_RUN_MARKER = ".last_successful_run"
 
 
 class _DiscoveryBase:
@@ -68,6 +69,47 @@ class TriggersCheck(_DiscoveryBase):
         )
 
 
+def successful_run_marker(tada_dir: str | Path) -> Path:
+    return Path(tada_dir).resolve() / SUCCESSFUL_RUN_MARKER
+
+
+async def run_moments_discovery_once(state) -> bool:
+    """Run discovery, promotion, and trigger checks once."""
+    logs_dir = str(Path(state.config.log_dir).resolve())
+    tada_path = Path(state.config.tada_dir).resolve()
+    run_checkpoint = tada_path / ".last_run"
+
+    cfg = state.config
+    model = cfg.moments_agent_model
+    api_key = cfg.resolve_api_key("moments_agent_api_key")
+    subagent_model = cfg.subagent_model or None
+    subagent_api_key = cfg.resolve_api_key("subagent_api_key") if cfg.subagent_model else None
+
+    try:
+        logger.info("Discovery: running worker pipeline")
+        result = await state.background_job_runner.run(
+            "moments.discovery",
+            {
+                "logs_dir": logs_dir,
+                "model": model,
+                "api_key": api_key,
+                "subagent_model": subagent_model,
+                "subagent_api_key": subagent_api_key,
+                "run_checkpoint": str(run_checkpoint),
+            },
+            on_event=lambda event: relay_worker_event(state, event),
+        )
+        if result.get("success"):
+            summaries = result.get("summaries") or {}
+            logger.info("Discovery pipeline complete:\n%s", summaries)
+            successful_run_marker(tada_path).write_text("")
+            return True
+        logger.warning("Discovery worker returned unsuccessful result: %s", result)
+        return False
+    finally:
+        await state.broadcast_activity("moments_discovery")
+
+
 async def run_moments_discovery(state) -> None:
     """Background task: poll every SCAN_INTERVAL and run the discovery pipeline
     whenever the most recent scheduled occurrence hasn't completed yet.
@@ -100,33 +142,7 @@ async def run_moments_discovery(state) -> None:
             if not scheduled_service_due(schedule, run_checkpoint):
                 continue
 
-            cfg = state.config
-            model = cfg.moments_agent_model
-            api_key = cfg.resolve_api_key("moments_agent_api_key")
-            subagent_model = cfg.subagent_model or None
-            subagent_api_key = cfg.resolve_api_key("subagent_api_key") if cfg.subagent_model else None
-
-            try:
-                logger.info("Discovery: running worker pipeline")
-                result = await state.background_job_runner.run(
-                    "moments.discovery",
-                    {
-                        "logs_dir": logs_dir,
-                        "model": model,
-                        "api_key": api_key,
-                        "subagent_model": subagent_model,
-                        "subagent_api_key": subagent_api_key,
-                        "run_checkpoint": str(run_checkpoint),
-                    },
-                    on_event=lambda event: relay_worker_event(state, event),
-                )
-                if result.get("success"):
-                    summaries = result.get("summaries") or {}
-                    logger.info("Discovery pipeline complete:\n%s", summaries)
-                else:
-                    logger.warning("Discovery worker returned unsuccessful result: %s", result)
-            finally:
-                await state.broadcast_activity("moments_discovery")
+            await run_moments_discovery_once(state)
 
         except asyncio.CancelledError:
             logger.info("Moments discovery service stopped")
