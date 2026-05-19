@@ -28,6 +28,7 @@ from apps.moments.core.candidates import (
     validate_candidate,
     write_candidates_jsonl,
 )
+from apps.moments.core.paths import summarize_tada_tasks
 from apps.moments.api import routes as moments_routes
 from apps.moments.runtime import execute
 from apps.moments.runtime.scheduler import _execute_one_moment, load_run_history, scheduled_service_due, should_run
@@ -483,6 +484,12 @@ class MomentsPipelineTests(unittest.TestCase):
             self.assertIn("visible control or click alone", discover_structured.instructions[0])
             self.assertIn("require explicit confirmation", discover_structured.instructions[0])
             self.assertIn("completed irreversible actions", discover_structured.instructions[0])
+            self.assertIn("Keep each candidate grounded in one clear future use", discover_prompt)
+            self.assertIn("Do not connect unrelated meetings", discover_prompt)
+            self.assertIn("already being handled in the visible activity", discover_prompt)
+            self.assertIn("same system or artifact the user is visibly modifying now", discover_prompt)
+            self.assertIn("current implementation activity is not enough evidence", discover_prompt)
+            self.assertIn("independent of the current edits", discover_prompt)
             candidate_files = _candidate_files(root)
             self.assertEqual(len(candidate_files), 1)
             self.assertTrue(_tada_run_checkpoint(root).exists())
@@ -495,6 +502,8 @@ class MomentsPipelineTests(unittest.TestCase):
             self.assertIn("paper-digest", promote_structured.instructions[0])
             self.assertIn("likely_next_need", promote_structured.instructions[0])
             self.assertIn("advances that future need", promote_structured.instructions[0])
+            self.assertIn("duplicate work already underway", promote_structured.instructions[0])
+            self.assertIn("same system or artifact currently being modified", promote_structured.instructions[0])
 
     def test_invalid_discovery_keeps_seed_checkpoint(self):
         with tempfile.TemporaryDirectory() as d:
@@ -884,11 +893,41 @@ class MomentsPipelineTests(unittest.TestCase):
                 result = discover.run(str(logs), model="fake")
 
             self.assertIn("research/paper-digest", structured.instructions[0])
+            self.assertIn("one-shot output already generated", structured.instructions[0])
+            self.assertIn("temporal adjacency is not enough", structured.instructions[0])
+            self.assertIn("duplicate work already underway", structured.instructions[0])
+            self.assertIn("same system or artifact currently being modified", structured.instructions[0])
+            self.assertIn("only evidence is current implementation activity", structured.instructions[0])
+            self.assertIn("independent evidence beyond the visible edits", structured.instructions[0])
             self.assertIn("Routed 1 candidates as updates", result)
             candidate_file = _candidate_files(root)[-1]
             candidate_text = candidate_file.read_text()
             self.assertIn('"slug": "paper-digest"', candidate_text)
             self.assertNotIn("new-paper-tracker", candidate_text)
+
+    def test_accepted_summary_marks_completed_once_outputs(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            tada = root / "logs-tada"
+            task_dir = tada / "research"
+            task_dir.mkdir(parents=True)
+            (task_dir / "brief.md").write_text(
+                "---\n"
+                "title: Brief\n"
+                "description: Completed one-shot brief.\n"
+                "cadence: once\n"
+                "confidence: 0.80\n"
+                "usefulness: 8\n"
+                "---\n\nBody\n"
+            )
+            output_dir = tada / "results" / "brief" / "output"
+            output_dir.mkdir(parents=True)
+            (output_dir / "index.md").write_text("# Brief\n")
+
+            summary = summarize_tada_tasks(tada)
+
+            self.assertIn("research/brief", summary)
+            self.assertIn("one-shot output already generated", summary)
 
 
 if __name__ == "__main__":

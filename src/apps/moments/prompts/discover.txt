@@ -31,6 +31,12 @@ Here are some examples of strong forward-looking ideas:
 Select ruthlessly. Return 0-2 FOCUSED candidates per chunk, keep separate activity clusters separate, and reject isolated sparse leads rather than inflating them into moments.
 Make sure each candidate is genuinely new — not already completed by the user (see "Skip Completed Work" below) and not covered by another moment.
 
+## Evidence Boundaries
+
+Keep each candidate grounded in one clear future use. 
+
+Do not connect unrelated meetings, papers, people, tools, investor threads, coding work, or personal logistics just because they happened near each other in time or share broad terms.
+
 ## Cadence And Frequency
 
 Each candidate must declare a `cadence` and the matching `schedule` or `trigger`:
@@ -53,6 +59,12 @@ Propose a candidate only when the need is still ahead of the user. Before propos
 Treat as done: email sent, doc published or submitted, PR merged, purchase or booking confirmed, a decision visibly reached, an event or trip already past, a file exported or delivered.
 
 Exception: if the user finished one instance of something genuinely recurring, a `scheduled` moment for the next occurrence is still valid — but never a `once` moment for the instance they already completed.
+
+Existing accepted moments marked as "one-shot output already generated" are completed work. Reject new `once` candidates with the same target unless the activity contains explicit fresh evidence of a new follow-up, revision request, reopened decision, or next instance. If it is truly a follow-up to the same durable workflow, route it to the existing slug rather than inventing a neighboring moment.
+
+Reject work that is already being handled in the visible activity. If the user has just started, delegated, or completed the work in the current trajectory, do not turn that same work into a future moment. Also reject plans to continue, refactor, validate, or test the same system or artifact the user is visibly modifying now. A useful candidate should help with a downstream next step after the current work, not duplicate the work already underway.
+
+For engineering work, current implementation activity is not enough evidence for a roadmap, migration plan, or test plan. Propose that kind of candidate only when there is evidence independent of the current edits, such as a deployment decision, handoff, review, deadline, integration point, or unresolved design choice. Do not rescue active implementation work by reframing it as a long-term architecture note.
 
 ## Sources
 

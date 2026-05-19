@@ -16,6 +16,7 @@ Current date and time: **{now}**
 - Down-rank or reject candidates whose `likely_next_need` is vague, generic, or disconnected from the requested artifact.
 - Down-rank passive recaps unless the artifact clearly enables a future action, decision, or workflow.
 - Down-rank static inventories unless they include prioritization, implications, recommended actions, or a decision frame tied to the likely next need.
+- Reject candidates that duplicate work already underway in the visible activity. Candidates that mainly plan continued edits, validation, or tests for the same system or artifact currently being modified are active work, not future moments. Promote only candidates that support a genuinely later next step.
 - Do not call tools.
 
 ## Agent Capabilities For Completability Checks

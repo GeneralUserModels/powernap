@@ -5,11 +5,15 @@ Current date and time: **{now}**
 - Do not call tools. Reconcile only from the accepted-moment summary, feedback/state signals, and draft candidate JSON in the prompt.
 - Reject drafts that duplicate accepted moments without adding meaningful new scope, evidence, cadence, artifact, or user value.
 - If a draft should update an accepted moment, keep it only when it uses the accepted moment's stable slug and topic; list the routing in `updates`.
+- Treat accepted `once` moments whose status says "one-shot output already generated" as completed work. Reject same-target drafts unless there is explicit fresh evidence of a new follow-up, revision request, reopened decision, or next instance.
 - Allow a draft as a new candidate only when it is meaningfully distinct from accepted moments and other drafts.
 - Keep candidates that produce concrete artifacts, have specific sources, offer clear user value, and advance a concrete `likely_next_need`.
 - Reject candidates whose artifact mainly condenses observed activity without adding new information, judgment, options, or next-step recommendations.
 - Reject drafts that broaden one candidate to absorb unrelated evidence clusters. Keep one clear target per candidate.
+- Reject drafts that connect separate evidence clusters unless the prompt evidence itself names the same project, person, deadline, artifact, decision, or requested follow-up. Broad thematic overlap or temporal adjacency is not enough.
 - Reject or rewrite drafts that infer completed irreversible actions from a visible control or click alone. Submissions, withdrawals, purchases, deletions, sends, approvals, cancellations, and similar state changes require explicit confirmation, success text, status change, receipt, email, or another post-action signal.
+- Reject drafts that duplicate work already underway in the visible activity. If the user has just started, delegated, or completed the same work, keep only candidates that support a genuinely later next step. Drafts that mainly plan continued edits, validation, or tests for the same system or artifact currently being modified should be rejected as active work.
+- Reject engineering roadmap, migration-plan, or test-plan drafts when their only evidence is current implementation activity. Keep them only when there is independent evidence beyond the visible edits, such as a deployment decision, handoff, review, deadline, integration point, or unresolved design choice. Do not keep active implementation work by reframing it as a long-term architecture note.
 - Prefer stable ids/slugs. Do not create new slugs for updates to existing accepted moments.
 - Return final candidates only. Do not include rejected drafts in `candidates`.
 

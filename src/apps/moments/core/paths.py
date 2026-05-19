@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from pathlib import Path
 
 # Top-level dir names inside `logs-tada/` that are NOT topic folders.
@@ -81,20 +82,38 @@ def snapshot_tada_mtimes(tada_dir: Path) -> dict[str, float]:
     return {md.stem: md.stat().st_mtime for md in list_active_task_files(tada_dir)}
 
 
+def _result_completed_at(tada_dir: Path, slug: str) -> str | None:
+    result_dir = tada_dir / "results" / slug
+    if not result_dir.is_dir():
+        return None
+    files = [
+        path
+        for path in result_dir.rglob("*")
+        if path.is_file() and not path.name.startswith("feedback_")
+    ]
+    if not files:
+        return None
+    mtime = max(path.stat().st_mtime for path in files)
+    return datetime.fromtimestamp(mtime, tz=timezone.utc).isoformat(timespec="minutes")
+
+
 def summarize_tada_tasks(tada_dir: Path) -> str:
     """Render active (executed and not dismissed) tada tasks as a markdown listing.
 
     Each entry shows topic/slug, title, description, cadence, schedule, and trigger
-    so the discovery agent can decide whether a new candidate would duplicate an
-    existing task. Excludes tasks that have never been executed and tasks the user
-    dismissed — proposing variants of those would not be useful.
+    so the discovery agent can decide whether a new candidate would duplicate
+    completed work or an existing task. Excludes tasks that have never been
+    executed and tasks the user dismissed — proposing variants of those would
+    not be useful.
     """
     from apps.moments.runtime.execute import _parse_frontmatter
+    from apps.moments.core.state import load_state
 
     files = list_active_task_files(tada_dir)
     if not files:
         return "(no existing tasks yet)"
 
+    moment_state = load_state(tada_dir)
     lines: list[str] = []
     for md in files:
         fm = _parse_frontmatter(md.read_text())
@@ -105,9 +124,22 @@ def summarize_tada_tasks(tada_dir: Path) -> str:
         cadence = fm.get("cadence", "?")
         schedule = fm.get("schedule", "—")
         trigger = fm.get("trigger") or "—"
+        completed_at = _result_completed_at(tada_dir, slug)
+        state = moment_state.get(slug, {})
+        status_parts: list[str] = []
+        if cadence == "once" and completed_at:
+            status_parts.append(f"one-shot output already generated at {completed_at}")
+        elif completed_at:
+            status_parts.append(f"last output generated at {completed_at}")
+        if state.get("last_viewed"):
+            status_parts.append(f"last viewed at {state['last_viewed']}")
+        if state.get("thumbs"):
+            status_parts.append(f"user feedback: thumbs {state['thumbs']}")
+        status = " | ".join(status_parts) or "status unknown"
         lines.append(
             f"- **{topic}/{slug}** — {title}\n"
             f"  {description}\n"
-            f"  cadence: {cadence} | schedule: {schedule} | trigger: {trigger}"
+            f"  cadence: {cadence} | schedule: {schedule} | trigger: {trigger}\n"
+            f"  status: {status}"
         )
     return "\n".join(lines)
