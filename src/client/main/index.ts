@@ -106,6 +106,40 @@ function fillMissingDefaults(
   return changed;
 }
 
+const LEGACY_MODEL_REPLACEMENTS: Record<string, string> = {
+  "gemini/gemini-3-flash-preview": "gemini/gemini-3.5-flash",
+};
+
+const MODEL_CONFIG_KEYS = [
+  "model",
+  "reward_llm",
+  "label_model",
+  "filter_model",
+  "tabracadabra_model",
+  "agent_model",
+  "subagent_model",
+  "memory_agent_model",
+  "moments_agent_model",
+  "seeker_model",
+];
+
+function replaceLegacyModelValues(cfg: Record<string, unknown>): boolean {
+  let changed = false;
+
+  for (const key of MODEL_CONFIG_KEYS) {
+    const item = cfg[key];
+    const replacement = typeof item === "string"
+      ? LEGACY_MODEL_REPLACEMENTS[item]
+      : undefined;
+    if (replacement) {
+      cfg[key] = replacement;
+      changed = true;
+    }
+  }
+
+  return changed;
+}
+
 function ensureConfigDefaults(): void {
   const configPath = path.join(getDataDir(), "tada-config.json");
   const defaultsPath = isDev()
@@ -119,6 +153,7 @@ function ensureConfigDefaults(): void {
   try { cfg = JSON.parse(fs.readFileSync(configPath, "utf-8")); } catch {}
 
   let changed = fillMissingDefaults(cfg, defaults);
+  if (replaceLegacyModelValues(cfg)) changed = true;
 
   // Deployment-controlled keys: the defaults file is the source of truth, so
   // on version change overwrite the user's local copy. Anything user-tunable
