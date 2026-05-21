@@ -107,7 +107,7 @@ function fillMissingDefaults(
 }
 
 const LEGACY_MODEL_REPLACEMENTS: Record<string, string> = {
-  "gemini/gemini-3-flash-preview": "gemini/gemini-3.5-flash",
+  "gemini/gemini-3.5-flash": "gemini/gemini-3-flash-preview",
 };
 
 const MODEL_CONFIG_KEYS = [

@@ -5,8 +5,8 @@
       "label": "Gemini 3.1 Flash-Lite"
     },
     "gemini_agent_flash": {
-      "value": "gemini/gemini-3.5-flash",
-      "label": "Gemini 3.5 Flash"
+      "value": "gemini/gemini-3-flash-preview",
+      "label": "Gemini 3 Flash Preview"
     },
     "claude_sonnet": {
       "value": "anthropic/claude-sonnet-4-6",
