@@ -18,6 +18,12 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from agent.builder import build_agent
+from agent.cli_backends import (
+    CliBackendConfig,
+    cli_footer,
+    run_stage_via_cli,
+    strip_tool_plumbing,
+)
 from apps.common.activity_streams import DEFAULT_FILTERED_STREAM_SOURCES
 from apps.common.structured_ops import StructuredOpsError, extract_json_object, require_list, require_string, safe_rel_path
 from apps.memory.schemas.structured import ExistingPageUpdatePayload, FinalizePageOpsPayload, InventoryPayload, NewPageCreatePayload
@@ -778,6 +784,57 @@ def _finalize_prompt(
     )
 
 
+def _cli_pass_stage(pass_name: str) -> str:
+    """Map a memory pass name to a stages.STAGE_MAX_TURNS key."""
+    return f"memory_{pass_name}"
+
+
+def _run_agent_pass_via_cli(
+    *,
+    pass_name: str,
+    instruction: str,
+    logs_dir: str,
+    on_round,
+    cli_config: CliBackendConfig,
+    final_response_model,
+    label_suffix: str = "",
+) -> str:
+    """CLI variant: writes the structured payload as JSON to a known path
+    inside `<logs_dir>/memory/.cli/` and returns its raw text. The existing
+    parsers (`_parse_inventory`, `_parse_page_ops`) accept JSON strings, so
+    the caller can treat the CLI output identically to the in-process result.
+    """
+    if final_response_model is None:
+        raise ValueError(f"CLI memory pass {pass_name!r} requires final_response_model")
+    memory_dir = Path(logs_dir).resolve() / "memory"
+    out_dir = memory_dir / ".cli"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    safe_suffix = re.sub(r"[^a-zA-Z0-9._-]+", "_", label_suffix).strip("_") or "out"
+    out_path = out_dir / f"{pass_name}_{safe_suffix}_{os.urandom(4).hex()}.json"
+
+    prompt = strip_tool_plumbing(instruction) + cli_footer(
+        stage=_cli_pass_stage(pass_name),
+        cwd=memory_dir,
+        output_paths=[out_path],
+        output_model=final_response_model,
+    )
+    run_stage_via_cli(
+        stage=_cli_pass_stage(pass_name),
+        config=cli_config,
+        prompt=prompt,
+        cwd=memory_dir,
+        log_dir=out_dir,
+        label=f"memory_{pass_name}_{safe_suffix}",
+        expected_outputs=[out_path],
+        # The CLI needs to read source logs under logs_dir; expose that root
+        # to Claude via --add-dir so writes stay confined to memory_dir but
+        # reads can reach the activity streams.
+        add_dirs=[Path(logs_dir).resolve()],
+        on_round=on_round,
+    )
+    return out_path.read_text()
+
+
 def _run_agent_pass(
     pass_name: str,
     instruction: str,
@@ -790,7 +847,19 @@ def _run_agent_pass(
     final_response_model=None,
     final_instruction: str | None = None,
     final_metadata_app: str = "memory_ingest",
+    cli_config: CliBackendConfig | None = None,
+    label_suffix: str = "",
 ) -> str:
+    if cli_config is not None:
+        return _run_agent_pass_via_cli(
+            pass_name=pass_name,
+            instruction=instruction,
+            logs_dir=logs_dir,
+            on_round=on_round,
+            cli_config=cli_config,
+            final_response_model=final_response_model,
+            label_suffix=label_suffix,
+        )
     agent, _ = build_agent(
         model, logs_dir, api_key=api_key,
         subagent_model=subagent_model, subagent_api_key=subagent_api_key,
@@ -838,6 +907,7 @@ def _run_page_agent_tasks(
     subagent_model: str | None,
     subagent_api_key: str | None,
     page_on_rounds: list[Callable[[int, int], None]] | None = None,
+    cli_config: CliBackendConfig | None = None,
 ) -> tuple[list[str], dict[str, list[dict[str, str]]], str]:
     if not tasks:
         return [], {"create_pages": [], "update_pages": []}, ""
@@ -859,6 +929,8 @@ def _run_page_agent_tasks(
                 final_response_model=task.payload_model,
                 final_instruction=task.final_instruction,
                 final_metadata_app=task.final_metadata_app,
+                cli_config=cli_config,
+                label_suffix=task.label,
             ): (idx, task)
             for idx, task in enumerate(tasks)
         }
@@ -904,6 +976,7 @@ def run(
     on_round=None,
     subagent_model: str | None = None,
     subagent_api_key: str | None = None,
+    cli_config: CliBackendConfig | None = None,
 ) -> str:
     logs_path = Path(logs_dir).resolve()
     logs_dir = str(logs_path)
@@ -933,6 +1006,8 @@ def run(
             "Use only paths and page titles grounded in the conversation and tool results."
         ),
         final_metadata_app="memory_inventory",
+        cli_config=cli_config,
+        label_suffix="inventory",
     )
     progress.emit(20)
     inventory = _parse_inventory(inventory_result, inputs.mode)
@@ -987,6 +1062,7 @@ def run(
         subagent_model,
         subagent_api_key,
         page_on_rounds=progress.page_callbacks(len(page_tasks), 20, 60),
+        cli_config=cli_config,
     )
     progress.emit(80)
     content_result = "\n\n".join(content_result_parts) or "(no content page agents were needed)"
@@ -1015,6 +1091,8 @@ def run(
             "or other validation issues. Include only minimal grounded stubs needed to resolve listed validation issues."
         ),
         final_metadata_app="memory_finalize_pages",
+        cli_config=cli_config,
+        label_suffix="finalize",
     )
     finalize_ops, finalize_notes = _parse_page_ops(
         finalize_result,

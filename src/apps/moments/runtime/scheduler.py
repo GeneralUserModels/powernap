@@ -228,6 +228,7 @@ async def _execute_one_moment(
     last_run_at: float | None,
     subagent_model: str | None = None,
     subagent_api_key: str | None = None,
+    cli_backend_config: dict | None = None,
 ) -> None:
     """Run a single tada inside the executor semaphore.
 
@@ -264,6 +265,7 @@ async def _execute_one_moment(
                     "last_run_at": last_run_at,
                     "subagent_model": subagent_model,
                     "subagent_api_key": subagent_api_key,
+                    "cli_backend_config": cli_backend_config,
                     "activity": {
                         "agent": activity_key,
                         "message": run_msg,
@@ -314,11 +316,14 @@ async def _execute_one_moment(
 
 async def scan_due_moments_once(state) -> int:
     """Scan accepted moments once and enqueue due executions."""
+    from agent.cli_backends import cli_config_payload
+
     cfg = state.config
     model = cfg.moments_agent_model
     api_key = cfg.resolve_api_key("moments_agent_api_key")
     subagent_model = cfg.subagent_model or None
     subagent_api_key = cfg.resolve_api_key("subagent_api_key") if cfg.subagent_model else None
+    cli_backend = cli_config_payload(cfg)
 
     logs_dir = str(Path(cfg.log_dir).resolve())
     tada_dir = Path(cfg.tada_dir).resolve()
@@ -358,6 +363,7 @@ async def scan_due_moments_once(state) -> int:
             run_history.get(slug),
             subagent_model=subagent_model,
             subagent_api_key=subagent_api_key,
+            cli_backend_config=cli_backend,
         ))
         state.moments_execution_tasks.add(task)
         enqueued += 1

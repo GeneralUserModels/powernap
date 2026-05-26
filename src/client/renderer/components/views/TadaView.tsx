@@ -6,8 +6,7 @@ import { useBackgroundWork } from "../../hooks/useBackgroundWork";
 import { ChatView } from "../ChatView";
 import { FeatureActivityBanner } from "../FeatureActivityBanner";
 import { FeatureScheduleBanner } from "../FeatureScheduleBanner";
-import { getMomentResultPage, getMomentResultPages } from "../../api/client";
-import { MarkdownContent } from "../shared/MarkdownContent";
+import { getServerUrl, updateMomentState } from "../../api/client";
 
 const CADENCE_OPTIONS = ["scheduled", "once"] as const;
 const REPEAT_OPTIONS = ["daily", "weekly"] as const;
@@ -191,281 +190,131 @@ function RunningIndicator({ pct }: { pct: number }) {
   );
 }
 
-function stripLinkSuffix(href: string): string {
-  return href.split("#", 1)[0].split("?", 1)[0];
-}
+/** Incoming postMessage from the moment's iframe app. */
+type MomentMessage = {
+  source?: string;
+  type?: string;
+  nonce?: string;
+  payload?: Record<string, unknown>;
+};
 
-function isExternalHref(href?: string): boolean {
-  if (!href) return false;
-  return /^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith("//");
-}
-
-function normalizeResultPath(path: string): string {
-  const parts: string[] = [];
-  for (const part of path.replace(/\\/g, "/").split("/")) {
-    if (!part || part === ".") continue;
-    if (part === "..") parts.pop();
-    else parts.push(part);
+/** Dispatch one action on behalf of the iframe; returns {ok, error?}. */
+async function dispatchMomentAction(
+  slug: string,
+  type: string,
+  payload: Record<string, unknown> | undefined,
+): Promise<{ ok: boolean; error?: string }> {
+  switch (type) {
+    case "copyToClipboard": {
+      const text = String(payload?.text ?? "");
+      try {
+        await navigator.clipboard.writeText(text);
+        return { ok: true };
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      }
+    }
+    case "openExternal": {
+      const url = String(payload?.url ?? "");
+      if (!url) return { ok: false, error: "missing_url" };
+      try {
+        await window.tada?.openExternalUrl(url);
+        return { ok: true };
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      }
+    }
+    case "downloadFile": {
+      const filename = String(payload?.filename ?? "download.txt");
+      const content = String(payload?.content ?? "");
+      const mime = String(payload?.mime ?? "application/octet-stream");
+      try {
+        const blob = new Blob([content], { type: mime });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        return { ok: true };
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      }
+    }
+    case "markComplete": {
+      try {
+        await updateMomentState(slug, { dismissed: true });
+        return { ok: true };
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      }
+    }
+    case "sendEmail":
+    case "addCalendarEvent":
+    case "saveToMemory":
+      return { ok: false, error: "not_implemented" };
+    default:
+      return { ok: false, error: "unknown_action" };
   }
-  return parts.join("/");
 }
 
-function decodeHrefPath(path: string): string {
-  try {
-    return decodeURIComponent(path);
-  } catch {
-    return path;
-  }
-}
+function TadaWebAppResult({ slug }: { slug: string }) {
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const serverUrl = getServerUrl();
 
-function TadaMarkdownResult({ slug }: { slug: string }) {
-  const [pages, setPages] = useState<MomentResultPage[]>([]);
-  const [selectedPath, setSelectedPath] = useState<string | null>(null);
-  const [markdown, setMarkdown] = useState("");
-  const [pageFilter, setPageFilter] = useState("");
-  const [pagesLoading, setPagesLoading] = useState(false);
-  const [pageLoading, setPageLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const src = useMemo(() => {
+    if (!serverUrl) return "";
+    return `${serverUrl}/api/moments/results/${encodeURIComponent(slug)}/pages/index.html?slug=${encodeURIComponent(slug)}`;
+  }, [serverUrl, slug]);
 
+  // Bridge: listen for postMessage from the iframe app, dispatch the action,
+  // and post the ack back to the iframe (matched by nonce).
   useEffect(() => {
-    let cancelled = false;
-    setPages([]);
-    setSelectedPath(null);
-    setMarkdown("");
-    setPageFilter("");
-    setError(null);
-    setPagesLoading(true);
-    getMomentResultPages(slug)
-      .then((nextPages) => {
-        if (cancelled) return;
-        setPages(nextPages);
-        setSelectedPath(nextPages[0]?.path ?? null);
-      })
-      .catch(() => {
-        if (!cancelled) setError("Could not load pages.");
-      })
-      .finally(() => {
-        if (!cancelled) setPagesLoading(false);
-      });
-    return () => { cancelled = true; };
+    const onMessage = (event: MessageEvent) => {
+      const data = event.data as MomentMessage | null;
+      if (!data || data.source !== "tada-moment" || !data.type || !data.nonce) return;
+      const iframe = iframeRef.current;
+      if (!iframe || event.source !== iframe.contentWindow) return;
+      const nonce = data.nonce;
+      void (async () => {
+        const result = await dispatchMomentAction(slug, data.type!, data.payload);
+        iframe.contentWindow?.postMessage(
+          { source: "tada-host", nonce, ok: result.ok, error: result.error },
+          "*",
+        );
+      })();
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
   }, [slug]);
 
-  useEffect(() => {
-    if (!selectedPath) return;
-    let cancelled = false;
-    setPageLoading(true);
-    setError(null);
-    getMomentResultPage(slug, selectedPath)
-      .then((content) => {
-        if (!cancelled) setMarkdown(content);
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setMarkdown("");
-          setError("Could not load this page.");
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setPageLoading(false);
-      });
-    return () => { cancelled = true; };
-  }, [slug, selectedPath]);
-
-  useEffect(() => {
-    const el = document.querySelector(".tada-result-markdown");
-    if (el instanceof HTMLElement) el.scrollTo({ top: 0 });
-  }, [markdown]);
-
-  const selectedIndex = pages.findIndex((page) => page.path === selectedPath);
-  const selectedPage = selectedIndex >= 0 ? pages[selectedIndex] : null;
-  const visiblePages = useMemo(() => {
-    const q = pageFilter.trim().toLowerCase();
-    if (!q) return pages;
-    return pages.filter((page) =>
-      page.title.toLowerCase().includes(q) ||
-      page.path.toLowerCase().includes(q)
-    );
-  }, [pages, pageFilter]);
-
-  const selectByOffset = useCallback((offset: number) => {
-    if (!pages.length || selectedIndex < 0) return;
-    const nextIndex = Math.min(pages.length - 1, Math.max(0, selectedIndex + offset));
-    setSelectedPath(pages[nextIndex].path);
-  }, [pages, selectedIndex]);
-
-  const resolvePageHref = useCallback((href?: string): string | null => {
-    if (!href || isExternalHref(href)) return null;
-    const hrefPath = stripLinkSuffix(href);
-    if (!hrefPath) return selectedPath;
-
-    const decoded = decodeHrefPath(hrefPath);
-    const baseDir = selectedPath?.split("/").slice(0, -1).join("/") ?? "";
-    const candidates = new Set<string>();
-    candidates.add(normalizeResultPath(decoded.replace(/^\/+/, "")));
-    if (!decoded.startsWith("/")) {
-      candidates.add(normalizeResultPath(`${baseDir}/${decoded}`));
-    }
-    if (!decoded.endsWith(".md")) {
-      candidates.add(normalizeResultPath(`${decoded}.md`));
-      if (!decoded.startsWith("/")) {
-        candidates.add(normalizeResultPath(`${baseDir}/${decoded}.md`));
-      }
-    }
-
-    return pages.find((page) => candidates.has(page.path))?.path ?? null;
-  }, [pages, selectedPath]);
-
-  const handleMarkdownLinkClick = useCallback((event: React.MouseEvent<HTMLAnchorElement>, href?: string) => {
-    if (!href) return;
-    const targetPath = resolvePageHref(href);
-    if (targetPath) {
-      event.preventDefault();
-      setSelectedPath(targetPath);
-      return;
-    }
-    if (!isExternalHref(href)) {
-      event.preventDefault();
-    }
-  }, [resolvePageHref]);
-
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      const target = event.target;
-      if (target instanceof HTMLElement) {
-        const tag = target.tagName.toLowerCase();
-        if (tag === "input" || tag === "textarea" || tag === "select" || target.isContentEditable) return;
-      }
-      if (event.key === "ArrowLeft") {
-        event.preventDefault();
-        selectByOffset(-1);
-      } else if (event.key === "ArrowRight") {
-        event.preventDefault();
-        selectByOffset(1);
-      }
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [selectByOffset]);
-
-  if (pagesLoading) {
+  if (!src) {
     return (
       <div className="tada-result-loading">
         <div className="tada-spinner" />
-        <span>Loading pages...</span>
+        <span>Loading…</span>
       </div>
     );
   }
 
-  if (error && pages.length === 0) {
-    return <div className="tada-result-empty">{error}</div>;
-  }
-
-  if (!pages.length) {
-    return <div className="tada-result-empty">No markdown pages found for this Tada.</div>;
-  }
-
   return (
-    <div className="tada-result-viewer">
-      <aside className="tada-result-rail" aria-label="Result pages">
-        <div className="tada-result-rail-header">
-          <span>Pages</span>
-          <span>{pages.length}</span>
-        </div>
-        <div className="tada-result-search-wrap">
-          <svg className="tada-result-search-icon" width="13" height="13" viewBox="0 0 14 14" fill="none">
-            <circle cx="6" cy="6" r="4.25" stroke="currentColor" strokeWidth="1.3"/>
-            <path d="M9.2 9.2L12 12" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
-          </svg>
-          <input
-            className="tada-result-search"
-            value={pageFilter}
-            onChange={(event) => setPageFilter(event.target.value)}
-            placeholder="Find page..."
-            spellCheck={false}
-          />
-        </div>
-        <div className="tada-result-page-list">
-          {visiblePages.map((page) => (
-            <button
-              key={page.path}
-              type="button"
-              className={`tada-result-page${page.path === selectedPath ? " active" : ""}`}
-              onClick={() => setSelectedPath(page.path)}
-            >
-              <span className="tada-result-page-title">{page.title}</span>
-              <span className="tada-result-page-path">{page.path}</span>
-            </button>
-          ))}
-          {visiblePages.length === 0 && (
-            <div className="tada-result-no-pages">No matching pages.</div>
-          )}
-        </div>
-      </aside>
-      <section className="tada-result-main">
-        <div className="tada-result-toolbar">
-          <div className="tada-result-current">
-            <span className="tada-result-current-title">{selectedPage?.title ?? "Untitled"}</span>
-            <span className="tada-result-current-meta">
-              {selectedIndex + 1} of {pages.length}
-            </span>
-          </div>
-          <div className="tada-result-nav">
-            <button
-              type="button"
-              className="tada-result-nav-btn"
-              onClick={() => selectByOffset(-1)}
-              disabled={selectedIndex <= 0}
-              title="Previous page"
-            >
-              <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
-                <path d="M8.5 3L4.5 7l4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-              </svg>
-            </button>
-            <button
-              type="button"
-              className="tada-result-nav-btn"
-              onClick={() => selectByOffset(1)}
-              disabled={selectedIndex < 0 || selectedIndex >= pages.length - 1}
-              title="Next page"
-            >
-              <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
-                <path d="M5.5 3l4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-              </svg>
-            </button>
-          </div>
-        </div>
-        {pageLoading ? (
-          <div className="tada-result-loading">
-            <div className="tada-spinner" />
-            <span>Loading page...</span>
-          </div>
-        ) : error ? (
-          <div className="tada-result-empty">{error}</div>
-        ) : (
-          <MarkdownContent
-            className="memex-content tada-result-markdown"
-            markdown={markdown}
-            components={{
-              a: ({ href, children }) => {
-                const targetPath = resolvePageHref(href);
-                const external = isExternalHref(href);
-                return (
-                  <a
-                    href={href}
-                    target={external ? "_blank" : undefined}
-                    rel={external ? "noopener noreferrer" : undefined}
-                    data-tada-page-link={targetPath ? "true" : undefined}
-                    onClick={(event) => handleMarkdownLinkClick(event, href)}
-                  >
-                    {children}
-                  </a>
-                );
-              },
-            }}
-          />
-        )}
-      </section>
-    </div>
+    <iframe
+      ref={iframeRef}
+      src={src}
+      title="Moment app"
+      // `allow-same-origin` is required so the iframe can use `localStorage`
+      // — `PN.useDraft` / `PN.useChecklist` persist user edits there, and
+      // without this flag every write throws a SecurityError and every read
+      // returns the default, so edits silently revert when the user
+      // navigates back to the moment. The iframe is served from
+      // http://127.0.0.1:<server-port>, a different origin than the
+      // Electron renderer, so the same-origin policy still isolates them
+      // from each other's storage and cookies.
+      sandbox="allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-same-origin"
+      style={{ width: "100%", height: "100%", border: "none", borderRadius: "var(--r-md)", background: "transparent" }}
+    />
   );
 }
 
@@ -774,7 +623,7 @@ export function TadaView() {
         </div>
         <div className={`tada-detail-split${feedbackOpen ? "" : " tada-detail-split--full"}`}>
           <div className="tada-detail glass-card">
-            <TadaMarkdownResult slug={selectedSlug} />
+            <TadaWebAppResult slug={selectedSlug} />
           </div>
           {feedbackOpen && (
             <div className="tada-feedback-panel glass-card">

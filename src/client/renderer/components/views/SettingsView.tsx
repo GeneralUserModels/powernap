@@ -1,10 +1,18 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useAppContext } from "../../context/AppContext";
 import { useFeatureFlag, useFeatureFlags, getFlag } from "../../featureFlags";
 import * as api from "../../api/client";
-import { getSettings, updateSettings } from "../../api/client";
+import { getSettings, updateSettings, getAgentBackendStatus, type AgentBackendStatus } from "../../api/client";
 import { AdvancedLLMSection, ADVANCED_ROWS, LLM_ROWS, AGENT_ROWS, fanOut } from "../shared/AdvancedLLMSection";
 import { ModelDropdown, LLM_MODELS, AGENT_MODELS, TINKER_MODELS } from "../shared/ModelDropdown";
+import { AgentBackendStatusPanel } from "../shared/AgentBackendStatusPanel";
+import { SimpleDropdown } from "../shared/SimpleDropdown";
+
+const AGENT_BACKEND_OPTIONS = [
+  { value: "gemini", label: "Tada agent" },
+  { value: "codex", label: "Codex CLI" },
+  { value: "claude_code", label: "Claude Code CLI" },
+] as const;
 import { useConnectors } from "../../hooks/useConnectors";
 import { ConnectorItem, CONNECTOR_META } from "../connectors/ConnectorItem";
 
@@ -32,6 +40,7 @@ function allKeys(): string[] {
   keys.add("agent_api_key");
   keys.add("subagent_model");
   keys.add("subagent_api_key");
+  keys.add("agent_backend");
   keys.add("tabracadabra_enabled");
   keys.add("moments_enabled");
   keys.add("memory_enabled");
@@ -50,6 +59,22 @@ export function SettingsView() {
   const tinkerEnabled = useFeatureFlag("tinker");
   const [values, setValues] = useState<Record<string, string>>({});
   const [showSaved, setShowSaved] = useState(false);
+  const [agentBackendStatus, setAgentBackendStatus] = useState<AgentBackendStatus | null>(null);
+
+  const refreshAgentBackendStatus = useCallback(async () => {
+    try {
+      const fresh = await getAgentBackendStatus();
+      setAgentBackendStatus(fresh);
+    } catch {
+      // server may not be ready yet; the polling loop below will catch up.
+    }
+  }, []);
+
+  useEffect(() => {
+    if (state.connected) {
+      refreshAgentBackendStatus();
+    }
+  }, [state.connected, refreshAgentBackendStatus]);
 
   const { connectors, loading: connectorsLoading, load: loadConnectors, toggle, toggling, connectGoogle, connectOutlook, retry } = useConnectors();
   const [connectingName, setConnectingName] = useState<string | null>(null);
@@ -238,6 +263,25 @@ export function SettingsView() {
                   onChange={(e) => handleAgentApiKeyChange(e.target.value)}
                 />
               </label>
+            </div>
+          </div>
+
+          <div className="model-row">
+            <span className="model-row-label">Agent Backend</span>
+            <div className="model-row-fields" style={{ gridTemplateColumns: "1fr" }}>
+              <SimpleDropdown
+                value={(values["agent_backend"] ?? "gemini") as "gemini" | "codex" | "claude_code"}
+                onChange={(v) => setValues((vals) => ({ ...vals, agent_backend: v }))}
+                options={AGENT_BACKEND_OPTIONS as unknown as { value: string; label: string }[]}
+              />
+              {(values["agent_backend"] === "codex" || values["agent_backend"] === "claude_code") && (
+                <AgentBackendStatusPanel
+                  backend={values["agent_backend"] as "codex" | "claude_code"}
+                  label={values["agent_backend"] === "codex" ? "Codex CLI" : "Claude Code CLI"}
+                  info={agentBackendStatus?.backends[values["agent_backend"]]}
+                  onRefresh={refreshAgentBackendStatus}
+                />
+              )}
             </div>
           </div>
 

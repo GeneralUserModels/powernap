@@ -1,24 +1,86 @@
-"""Execute a moment task and persist markdown output pages."""
+"""Execute a moment task and persist a mini-web-app output."""
 
 from __future__ import annotations
 
 import json
+import re
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
-from urllib.parse import quote
+
+# str.format() collides hard with this prompt — execute_research.txt
+# documents a React-style component API full of literal `{ name, ... }`
+# JSX-ish syntax. Doubling every brace in the file is fragile; instead we
+# substitute only the named placeholders we control and leave every other
+# `{...}` alone.
+_PLACEHOLDER_RE = re.compile(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}")
+
+
+def _render_template(template: str, **values: str) -> str:
+    def _sub(match: re.Match[str]) -> str:
+        key = match.group(1)
+        if key in values:
+            return str(values[key])
+        return match.group(0)
+    return _PLACEHOLDER_RE.sub(_sub, template)
 
 from dotenv import load_dotenv
 
 load_dotenv()
 
 from agent.builder import build_agent
+from agent.cli_backends import (
+    CliBackendConfig,
+    cli_footer,
+    run_stage_via_cli,
+    strip_tool_plumbing,
+)
 
-RESEARCH_WARNING_ROUND = 60
-RESEARCH_MAX_ROUNDS = 90
+RESEARCH_WARNING_ROUND = 100
+RESEARCH_MAX_ROUNDS = 150
 OUTPUT_SUBDIR = "output"
 
+OUTPUT_FILES = ["index.html", "styles.css", "app.js", "data.js", "base.css", "components.js", "meta.json"]
+# Core files the runner expects to see before treating the agent's mini-app as
+# "ready" and sweeping the subprocess. `data.js` is optional (only when JS data
+# is split out); `meta.json` is written by the Python runtime after the agent
+# exits.
+EXPECTED_APP_FILES = ["index.html", "styles.css", "app.js", "base.css", "components.js"]
+
+
+def _template_app_js_bytes() -> list[bytes]:
+    """Cache template app.js bytes used to detect unmodified scaffolds."""
+    out: list[bytes] = []
+    for tdir in TEMPLATES_DIR.iterdir():
+        if not tdir.is_dir() or tdir.name == "shared":
+            continue
+        app = tdir / "app.js"
+        if app.is_file():
+            out.append(app.read_bytes())
+    return out
+
+
+def _make_outputs_ready_check(pages_dir: Path):
+    """Predicate: all expected files non-empty AND app.js is not a verbatim
+    copy of any starter template. Agents always `cp templates/<x>/app.js`
+    first; without the byte check the runner SIGTERMs before the agent
+    rewrites it and ships the placeholder ("Moment Title") as the tada.
+    """
+    templates = _template_app_js_bytes()
+    def _check() -> bool:
+        for name in EXPECTED_APP_FILES:
+            p = pages_dir / name
+            if not p.is_file() or p.stat().st_size == 0:
+                return False
+        try:
+            app_bytes = (pages_dir / "app.js").read_bytes()
+        except OSError:
+            return False
+        return all(app_bytes != t for t in templates)
+    return _check
+
 _PROMPTS = Path(__file__).resolve().parent.parent / "prompts"
+TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
 OUTPUT_INSTRUCTION_TEMPLATE = (_PROMPTS / "execute_research.txt").read_text()
 
 
@@ -71,53 +133,8 @@ def _cleanup_backup(backup_dir: str) -> None:
 
 
 def _output_ready(output_pages_dir: str) -> bool:
-    path = Path(output_pages_dir)
-    if not path.is_dir():
-        return False
-    md_files = _output_pages(path)
-    return len(md_files) >= 2 and all(p.read_text().strip() for p in md_files)
-
-
-def _output_pages(output_pages_dir: Path) -> list[Path]:
-    return sorted(
-        p for p in output_pages_dir.rglob("*.md")
-        if p.is_file() and not any(part.startswith(".") for part in p.relative_to(output_pages_dir).parts)
-    )
-
-
-def _markdown_title(path: Path) -> str:
-    text = path.read_text(errors="replace")
-    fm = _parse_frontmatter(text)
-    title = (fm.get("title") or "").strip().strip("\"'")
-    if title:
-        return title
-    for line in text.splitlines():
-        stripped = line.strip()
-        if stripped.startswith("# "):
-            return stripped[2:].strip() or path.stem.replace("-", " ").title()
-    return path.stem.replace("-", " ").title()
-
-
-def _markdown_link_target(path: Path) -> str:
-    return quote(path.as_posix(), safe="/#")
-
-
-def _ensure_index_page(output_pages_dir: str, *, title: str, description: str) -> None:
-    """Create a quick navigation index if the agent did not write one."""
-    root = Path(output_pages_dir)
-    index_path = root / "index.md"
-    if index_path.exists():
-        return
-    pages = [p for p in _output_pages(root) if p.name != "index.md"]
-    lines = [f"# {title}", ""]
-    if description:
-        lines.extend([description, ""])
-    lines.extend(["## Pages", ""])
-    for page in pages:
-        rel = page.relative_to(root)
-        lines.append(f"- [{_markdown_title(page)}]({_markdown_link_target(rel)})")
-    lines.append("")
-    index_path.write_text("\n".join(lines))
+    index = Path(output_pages_dir) / "index.html"
+    return index.is_file() and index.read_text(errors="replace").strip() != ""
 
 
 def _build_agent_for_stage(
@@ -142,6 +159,49 @@ def _build_agent_for_stage(
     return agent
 
 
+def _run_execute_via_cli(
+    *,
+    output_instruction: str,
+    output_dir: str,
+    logs_dir: str,
+    cli_config: CliBackendConfig,
+    on_round=None,
+    label: str = "execute",
+) -> None:
+    out_path = Path(output_dir)
+    log_dir = out_path / ".cli"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    pages_dir = out_path / OUTPUT_SUBDIR
+    prompt = strip_tool_plumbing(output_instruction) + cli_footer(
+        stage="execute",
+        cwd=out_path,
+        output_dir=pages_dir,
+    )
+    run_stage_via_cli(
+        stage="execute",
+        config=cli_config,
+        prompt=prompt,
+        cwd=out_path,
+        log_dir=log_dir,
+        label=label,
+        # Once every core mini-app file exists and is non-empty, the runner's
+        # poll terminates the subprocess after a short grace period — saves us
+        # from agents that keep "verifying" after the app is on disk. Requires
+        # all five files (not just index.html) so the agent has a chance to
+        # finish writing CSS/JS before being swept.
+        expected_outputs=[pages_dir / name for name in EXPECTED_APP_FILES],
+        # The agent's first move is `cp templates/<x>/{index.html,app.js,...}`,
+        # which makes every expected file exist instantly with placeholder
+        # ("Moment Title") content. Hold off on the ready-grace until app.js
+        # diverges from the template — otherwise we SIGTERM mid-patch.
+        outputs_ready_check=_make_outputs_ready_check(pages_dir),
+        # Reads need access to the logs dir; writes stay confined to the
+        # output dir via codex's workspace-write sandbox / claude's --cd.
+        add_dirs=[Path(logs_dir).resolve()],
+        on_round=on_round,
+    )
+
+
 def run(
     task_path: str,
     output_dir: str,
@@ -154,6 +214,7 @@ def run(
     on_round=None,
     subagent_model: str | None = None,
     subagent_api_key: str | None = None,
+    cli_config: CliBackendConfig | None = None,
 ) -> bool:
     """Execute a moment task. Returns True if markdown output pages were produced."""
     task_content = Path(task_path).read_text()
@@ -197,45 +258,86 @@ def run(
             + "\n\n".join(parts)
         )
 
+    # If a previous version exists, show the agent the prior app.js + meta so
+    # it preserves the chosen template, `PN.useDraft` keys, and overall layout
+    # — and updates content + surfaces only. Without this the agent picks a
+    # different template or renames draft keys and silently invalidates the
+    # user's persisted edits.
+    previous_section = ""
+    if had_previous:
+        prev_app = Path(backup_dir) / OUTPUT_SUBDIR / "app.js"
+        prev_meta = Path(backup_dir) / "meta.json"
+        prev_app_text = prev_app.read_text(errors="replace") if prev_app.exists() else ""
+        prev_meta_text = prev_meta.read_text(errors="replace") if prev_meta.exists() else ""
+        if prev_app_text:
+            previous_section = (
+                "\n\n## Previous Version\n\n"
+                "This moment was generated before. Preserve the template choice, the structure of `app.js`, "
+                "and every `PN.useDraft` / `PN.useChecklist` key from the previous version — the user's "
+                "in-app edits are keyed off those names in localStorage and silently break if the keys "
+                "change. Update the `DATA` blob and add/adjust surfaces as needed for new evidence; do not "
+                "restructure the layout, rename keys, switch templates, or rewrite handlers unless the new "
+                "task content materially demands it.\n\n"
+                f"### Previous `meta.json`\n\n```json\n{prev_meta_text.strip()}\n```\n\n"
+                f"### Previous `app.js`\n\n```js\n{prev_app_text}\n```"
+            )
+
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
     output_pages_dir = str(Path(output_dir) / OUTPUT_SUBDIR)
-    output_instruction = f"Current date and time: **{now}**\n\n" + OUTPUT_INSTRUCTION_TEMPLATE.format(
+    output_instruction = f"Current date and time: **{now}**\n\n" + _render_template(
+        OUTPUT_INSTRUCTION_TEMPLATE,
         task_content=task_content,
         cadence=effective_cadence,
         schedule=effective_schedule,
         output_dir=output_pages_dir,
         logs_dir=logs_dir,
-    ) + feedback_section
+        templates_dir=str(TEMPLATES_DIR),
+    ) + feedback_section + previous_section
 
-    output_agent = _build_agent_for_stage(
-        model, logs_dir, output_dir, api_key, subagent_model, subagent_api_key,
-        max_rounds=RESEARCH_MAX_ROUNDS, warning_round=RESEARCH_WARNING_ROUND, on_round=on_round,
+    repair_instruction = output_instruction + (
+        "\n\n## Required Repair\n\n"
+        f"The required mini-web-app is not ready at `{output_pages_dir}`. Your previous attempt did not "
+        f"write `index.html`. Pick a template from `{TEMPLATES_DIR}/`, copy its files plus "
+        "`shared/base.css` and `shared/components.js` into the output directory, populate `app.js` "
+        f"with the task content, and write `{output_pages_dir}/index.html`. Then stop."
     )
-    output_agent.run([{"role": "user", "content": output_instruction}])
 
-    if not _output_ready(output_pages_dir):
-        output_repair_instruction = output_instruction + (
-            "\n\n## Required Repair\n\n"
-            f"The required output folder is not ready at `{output_pages_dir}`. Your previous attempt did not "
-            "write the required markdown files. Do not plan, do not only create directories, and do not build "
-            "the website. Use the `write_file` tool now to write at least two substantive non-empty markdown "
-            f"files inside `{output_pages_dir}`, verify they exist, and then stop."
+    if cli_config is None:
+        output_agent = _build_agent_for_stage(
+            model, logs_dir, output_dir, api_key, subagent_model, subagent_api_key,
+            max_rounds=RESEARCH_MAX_ROUNDS, warning_round=RESEARCH_WARNING_ROUND, on_round=on_round,
         )
-        output_agent.run([{"role": "user", "content": output_repair_instruction}])
+        output_agent.run([{"role": "user", "content": output_instruction}])
+
+        if not _output_ready(output_pages_dir):
+            output_agent.run([{"role": "user", "content": repair_instruction}])
+    else:
+        _run_execute_via_cli(
+            output_instruction=output_instruction,
+            output_dir=output_dir,
+            logs_dir=logs_dir,
+            cli_config=cli_config,
+            on_round=on_round,
+            label=f"execute_{slug}",
+        )
+
+        if not _output_ready(output_pages_dir):
+            _run_execute_via_cli(
+                output_instruction=repair_instruction,
+                output_dir=output_dir,
+                logs_dir=logs_dir,
+                cli_config=cli_config,
+                on_round=on_round,
+                label=f"execute_{slug}_repair",
+            )
 
     if not _output_ready(output_pages_dir):
-        print("  [output] FAILED: output markdown files were not written")
+        print(f"  [output] FAILED: index.html was not written to {output_pages_dir}")
         if had_previous:
             _restore_backup(backup_dir, output_dir)
             return True
         _clean_output(output_dir)
         return False
-
-    _ensure_index_page(
-        output_pages_dir,
-        title=fm.get("title", Path(task_path).stem),
-        description=fm.get("description", ""),
-    )
 
     meta_path = Path(output_dir) / "meta.json"
     meta_path.write_text(json.dumps({

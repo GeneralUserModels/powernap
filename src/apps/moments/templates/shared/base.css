@@ -1,0 +1,320 @@
+/* Tada Moments — Shared Design System */
+
+:root {
+  /* Palette */
+  --sage:      #84B179;
+  --fern:      #A2CB8B;
+  --mint:      #C7EABB;
+  --cream:     #E8F5BD;
+
+  /* Derived */
+  --sage-rgb:  132,177,121;
+  --fern-rgb:  162,203,139;
+  --mint-rgb:  199,234,187;
+  --cream-rgb: 232,245,189;
+
+  /* Surfaces */
+  --bg:            #F4F2EE;
+  --bg-warm:       #EBE8E2;
+  --glass:         rgba(255,255,255,0.55);
+  --glass-border:  rgba(var(--sage-rgb), 0.18);
+  --glass-hover:   rgba(255,255,255,0.72);
+  --glass-shadow:  rgba(var(--sage-rgb), 0.08);
+
+  /* Text */
+  --text:          #2C3A28;
+  --text-secondary:#6B7A65;
+  --text-tertiary: #9BA896;
+
+  /* Accents */
+  --active-green:  #5DA34E;
+  --danger:        #C9594B;
+  --danger-soft:   rgba(201,89,75,0.12);
+
+  /* Radii */
+  --r-sm: 8px;
+  --r-md: 14px;
+  --r-lg: 20px;
+  --r-xl: 26px;
+}
+
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: 'Tahoe', -apple-system, BlinkMacSystemFont, system-ui, 'Helvetica Neue', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.5;
+  padding: 24px;
+  -webkit-font-smoothing: antialiased;
+}
+
+.container { max-width: 800px; margin: 0 auto; }
+
+/* Typography */
+h1 { font-size: 18px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 4px; }
+h2 { font-size: 14px; font-weight: 650; margin-bottom: 12px; }
+h3 { font-size: 12.5px; font-weight: 600; color: var(--text-secondary); margin-bottom: 8px; }
+
+a { color: var(--sage); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* Wrap long text by default so user-content (drafts, summaries, copy
+   blocks) never escapes the iframe's right edge. `<pre>` and `<code>`
+   are the worst offenders — browser defaults are nowrap. */
+p, li, dd, dt { overflow-wrap: anywhere; word-break: break-word; }
+pre, code, samp, kbd {
+  font-family: ui-monospace, 'SF Mono', Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  max-width: 100%;
+}
+pre {
+  background: rgba(255, 255, 255, 0.55);
+  border: 1px solid rgba(var(--sage-rgb), 0.14);
+  border-radius: var(--r-sm);
+  padding: 10px 12px;
+  margin: 0;
+  line-height: 1.5;
+  color: var(--text);
+}
+code { padding: 1px 5px; background: rgba(var(--sage-rgb), 0.10); border-radius: 4px; }
+pre code { padding: 0; background: transparent; }
+
+.meta { font-size: 10.5px; color: var(--text-tertiary); margin-bottom: 16px; }
+
+/* Glass card */
+.glass-card {
+  background: var(--glass);
+  backdrop-filter: blur(30px) saturate(1.3);
+  -webkit-backdrop-filter: blur(30px) saturate(1.3);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-lg);
+  padding: 18px 20px;
+  margin-bottom: 12px;
+  box-shadow:
+    0 1px 3px var(--glass-shadow),
+    0 8px 24px rgba(var(--sage-rgb), 0.04),
+    inset 0 1px 0 rgba(255,255,255,0.5);
+  animation: fadeSlideIn 0.25s ease both;
+}
+
+/* Badge / pill label */
+.badge {
+  font-size: 9px; font-weight: 650; text-transform: uppercase; letter-spacing: 0.04em;
+  padding: 2px 8px; border-radius: 20px;
+  color: var(--sage); background: rgba(var(--sage-rgb), 0.12); display: inline-block;
+}
+.badge.warning { color: #D4A843; background: rgba(212,168,67,0.12); }
+.badge.danger { color: var(--danger); background: var(--danger-soft); }
+.badge.success { color: var(--active-green); background: rgba(93,163,78,0.1); }
+
+/* Stat row */
+.stat-row { display: flex; gap: 12px; margin-bottom: 16px; }
+.stat-pill {
+  flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px;
+  padding: 14px; text-align: center;
+  background: rgba(255,255,255,0.5); border: 1px solid rgba(var(--sage-rgb), 0.1);
+  border-radius: var(--r-md); transition: border-color 0.2s;
+}
+.stat-pill.highlight { border-color: rgba(var(--sage-rgb), 0.3); }
+.stat-value {
+  font-size: 22px; font-weight: 700; color: var(--sage);
+  font-variant-numeric: tabular-nums; letter-spacing: -0.02em;
+}
+.stat-label {
+  font-size: 10px; color: var(--text-secondary); text-transform: uppercase;
+  letter-spacing: 0.05em; font-weight: 600;
+}
+
+/* Pill buttons */
+.pill-btn {
+  padding: 5px 14px; border-radius: 20px;
+  border: 1px solid var(--glass-border);
+  background: rgba(255,255,255,0.6);
+  font-size: 11.5px; font-weight: 550; cursor: pointer;
+  transition: all 0.15s; font-family: inherit; color: var(--text-secondary);
+}
+.pill-btn:hover { background: rgba(255,255,255,0.85); }
+.pill-btn:active { transform: scale(0.97); }
+.pill-btn.active {
+  color: var(--sage); border-color: rgba(var(--sage-rgb), 0.25);
+  background: rgba(var(--mint-rgb), 0.2);
+}
+
+/* Search */
+.search-input {
+  padding: 6px 14px;
+  background: rgba(255,255,255,0.6); border: 1px solid rgba(var(--sage-rgb), 0.12);
+  border-radius: var(--r-sm); color: var(--text);
+  font-size: 12px; font-family: inherit;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.search-input::placeholder { color: var(--text-tertiary); }
+.search-input:focus {
+  outline: none; border-color: rgba(var(--sage-rgb), 0.4);
+  box-shadow: 0 0 0 3px rgba(var(--sage-rgb), 0.08);
+}
+
+/* Form controls — raw <input>/<textarea>/<select>/<button> styled by default
+   so agent-generated forms don't render as browser defaults. Opt out by
+   adding the `.bare` class. */
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not(.bare),
+textarea:not(.bare),
+select:not(.bare) {
+  width: 100%;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.6);
+  border: 1px solid rgba(var(--sage-rgb), 0.16);
+  border-radius: var(--r-sm);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12.5px;
+  line-height: 1.45;
+  transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+}
+input:not(.bare):focus,
+textarea:not(.bare):focus,
+select:not(.bare):focus {
+  outline: none;
+  border-color: rgba(var(--sage-rgb), 0.42);
+  background: rgba(255, 255, 255, 0.85);
+  box-shadow: 0 0 0 3px rgba(var(--sage-rgb), 0.10);
+}
+input:not(.bare)::placeholder,
+textarea:not(.bare)::placeholder {
+  color: var(--text-tertiary);
+}
+textarea:not(.bare) {
+  min-height: 96px;
+  resize: vertical;
+}
+input[type="checkbox"]:not(.bare),
+input[type="radio"]:not(.bare) {
+  accent-color: var(--sage);
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  cursor: pointer;
+}
+select:not(.bare) {
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: linear-gradient(45deg, transparent 50%, var(--text-tertiary) 50%),
+                    linear-gradient(135deg, var(--text-tertiary) 50%, transparent 50%);
+  background-position: calc(100% - 14px) 50%, calc(100% - 9px) 50%;
+  background-size: 5px 5px;
+  background-repeat: no-repeat;
+  padding-right: 28px;
+}
+button:not(.bare):not(.pill-btn):not(.search-input):not(.tada-card-action-btn) {
+  padding: 7px 14px;
+  border-radius: var(--r-sm);
+  border: 1px solid rgba(var(--sage-rgb), 0.22);
+  background: rgba(255, 255, 255, 0.7);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 550;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, transform 0.05s;
+}
+button:not(.bare):hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.92);
+  border-color: rgba(var(--sage-rgb), 0.38);
+}
+button:not(.bare):active:not(:disabled) { transform: scale(0.98); }
+button:not(.bare):disabled { opacity: 0.5; cursor: default; }
+button.primary:not(.bare) {
+  background: rgba(var(--sage-rgb), 0.16);
+  border-color: rgba(var(--sage-rgb), 0.32);
+  color: var(--active-green);
+  font-weight: 620;
+}
+button.primary:not(.bare):hover:not(:disabled) {
+  background: rgba(var(--sage-rgb), 0.24);
+}
+label {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+  letter-spacing: 0.01em;
+}
+label.inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 0;
+  font-weight: 550;
+  color: var(--text);
+}
+fieldset { border: none; margin-bottom: 12px; }
+
+/* Layout utilities — common shapes apps reach for so they don't have to
+   redefine these in styles.css. Class names match what the agent already
+   produces in practice. */
+.stack          { display: flex; flex-direction: column; gap: 10px; }
+.stack.tight    { gap: 6px; }
+.stack.loose    { gap: 16px; }
+.row            { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.row.tight      { gap: 6px; }
+.row.between    { justify-content: space-between; }
+.field-grid     { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; }
+.field-row      { display: flex; gap: 10px; margin-bottom: 10px; align-items: flex-end; flex-wrap: wrap; }
+.field-row > *  { flex: 1; min-width: 0; }
+.field-row > label { flex: 0 0 auto; align-self: center; }
+.field          { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.field-wide     { grid-column: 1 / -1; }
+.main-grid      { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(220px, 1fr); gap: 14px; }
+.split          { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.side-stack     { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.section-head   { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+.section-head h2, .section-head h3 { margin: 0; }
+.check-list     { display: flex; flex-direction: column; gap: 6px; }
+.check-row      { display: flex; align-items: center; gap: 10px; padding: 6px 4px; cursor: pointer; font-size: 12.5px; color: var(--text); }
+.check-row:hover { color: var(--text); }
+.check-row input { width: auto; }
+.check-row.done span { color: var(--text-tertiary); text-decoration: line-through; }
+.button-row     { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.button-row.wrap { flex-wrap: wrap; }
+.toast          { font-size: 11.5px; color: var(--active-green); background: rgba(var(--mint-rgb), 0.4); padding: 4px 10px; border-radius: 999px; }
+.muted          { color: var(--text-tertiary); }
+.tight          { margin: 0; }
+.eyebrow        { font-size: 10px; font-weight: 650; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 4px; }
+@media (max-width: 720px) {
+  .main-grid, .split { grid-template-columns: 1fr; }
+}
+
+/* Card content */
+.card-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.card-title { font-size: 13px; font-weight: 650; color: var(--text); letter-spacing: -0.01em; }
+.card-subtitle { font-size: 11.5px; color: var(--text-secondary); margin-top: 2px; }
+.card-desc { font-size: 12.5px; color: var(--text-secondary); line-height: 1.55; margin-top: 8px; }
+.card-meta { font-size: 11px; color: var(--text-tertiary); margin-top: 6px; }
+.card-badges { display: flex; flex-wrap: wrap; gap: 4px; }
+
+/* Utility */
+.result-count { font-size: 11px; color: var(--text-tertiary); margin-bottom: 8px; font-weight: 550; }
+.empty { text-align: center; padding: 32px; color: var(--text-tertiary); font-size: 12.5px; }
+
+/* Semantic colors */
+.success { color: var(--active-green); }
+.warning { color: #D4A843; }
+.danger { color: var(--danger); }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(var(--sage-rgb), 0.2); border-radius: 3px; }
+
+/* Animations */
+@keyframes fadeSlideIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}

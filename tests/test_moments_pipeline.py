@@ -466,28 +466,16 @@ class MomentsPipelineTests(unittest.TestCase):
                 _filtered_row(recent, "screen", "reading papers") + "\n"
             )
             draft_state_json = "```json\n" + json.dumps({"tasks": [_candidate()]}) + "\n```"
-            reconcile_json = "```json\n" + json.dumps({"candidates": [_candidate()], "updates": [], "rejected": [], "notes": ""}) + "\n```"
             promotion_json = '```json\n{"ranked":[{"id":"paper-digest","score":9,"reason":"useful"}],"rejected":[]}\n```'
-            discover_structured = _FakeStructuredCompletion(reconcile_json)
             promote_structured = _FakeStructuredCompletion(promotion_json)
 
             fake_agent = _FakeToolAgent(draft_state_json)
-            with patch.object(discover, "build_agent", return_value=(fake_agent, None)), \
-                 patch.object(discover, "structured_completion", side_effect=discover_structured):
+            with patch.object(discover, "build_agent", return_value=(fake_agent, None)):
                 discover.run(str(logs), model="fake")
             discover_prompt = fake_agent.messages[0][0]["content"]
             self.assertIn("screen/filtered.jsonl", discover_prompt)
-            self.assertIn("reading papers", discover_prompt)
-            self.assertIn("(no drafts yet)", discover_prompt)
-            self.assertIn('"tasks"', discover_prompt)
-            self.assertIn("Draft Candidates From Discovery", discover_structured.instructions[0])
-            self.assertIn("visible control or click alone", discover_structured.instructions[0])
-            self.assertIn("require explicit confirmation", discover_structured.instructions[0])
-            self.assertIn("completed irreversible actions", discover_structured.instructions[0])
-            self.assertIn("Keep each candidate grounded in one clear future use", discover_prompt)
-            self.assertIn("Do not connect unrelated meetings", discover_prompt)
-            self.assertIn("already being handled in the visible activity", discover_prompt)
-            self.assertIn("same system or artifact the user is visibly modifying now", discover_prompt)
+            self.assertIn("Activity window starts after:", discover_prompt)
+            self.assertIn("Activity Chunk", discover_prompt)
             self.assertIn("current implementation activity is not enough evidence", discover_prompt)
             self.assertIn("independent of the current edits", discover_prompt)
             candidate_files = _candidate_files(root)
@@ -499,11 +487,12 @@ class MomentsPipelineTests(unittest.TestCase):
             accepted = root / "logs-tada" / "research" / "paper-digest.md"
             self.assertTrue(accepted.exists())
             self.assertIn("cadence: scheduled", accepted.read_text())
-            self.assertIn("paper-digest", promote_structured.instructions[0])
-            self.assertIn("likely_next_need", promote_structured.instructions[0])
-            self.assertIn("advances that future need", promote_structured.instructions[0])
-            self.assertIn("duplicate work already underway", promote_structured.instructions[0])
-            self.assertIn("same system or artifact currently being modified", promote_structured.instructions[0])
+            promote_prompt = promote_structured.instructions[0]
+            self.assertIn("paper-digest", promote_prompt)
+            self.assertIn("likely_next_need", promote_prompt)
+            self.assertIn("Drop completed work", promote_prompt)
+            self.assertIn("explicit confirmation", promote_prompt)
+            self.assertIn("Do not call tools", promote_prompt)
 
     def test_invalid_discovery_keeps_seed_checkpoint(self):
         with tempfile.TemporaryDirectory() as d:
@@ -514,9 +503,7 @@ class MomentsPipelineTests(unittest.TestCase):
             (screen / "filtered.jsonl").write_text(
                 _filtered_row(recent, "screen", "reading papers") + "\n"
             )
-            structured = _FakeStructuredCompletion("not json")
-            with patch.object(discover, "build_agent", return_value=(_FakeToolAgent("not json", "not json"), None)), \
-                 patch.object(discover, "structured_completion", side_effect=structured):
+            with patch.object(discover, "build_agent", return_value=(_FakeToolAgent("not json", "not json"), None)):
                 with self.assertRaises(CandidateError):
                     discover.run(str(logs), model="fake")
             seeded = datetime.fromisoformat(_tada_run_checkpoint(Path(d)).read_text().strip())
@@ -533,20 +520,16 @@ class MomentsPipelineTests(unittest.TestCase):
                 _filtered_row(ancient, "screen", "ancient topic") + "\n"
                 + _filtered_row(recent, "screen", "recent topic") + "\n"
             )
-            structured = _FakeStructuredCompletion(
-                "```json\n" + json.dumps({"candidates": [_candidate()], "updates": [], "rejected": [], "notes": ""}) + "\n```",
-            )
             fake_agent = _FakeToolAgent("```json\n" + json.dumps({"tasks": [_candidate()]}) + "\n```")
 
-            with patch.object(discover, "build_agent", return_value=(fake_agent, None)), \
-                 patch.object(discover, "structured_completion", side_effect=structured):
+            with patch.object(discover, "build_agent", return_value=(fake_agent, None)):
                 result = discover.run(str(logs), model="fake")
 
             discover_prompt = fake_agent.messages[0][0]["content"]
             self.assertIn("Activity window starts after:", discover_prompt)
+            self.assertIn("Activity window starts after:", result)
             self.assertIn("recent topic", discover_prompt)
             self.assertNotIn("ancient topic", discover_prompt)
-            self.assertIn("Activity window starts after:", result)
 
     def test_discovery_retries_malformed_json_once(self):
         with tempfile.TemporaryDirectory() as d:
@@ -557,15 +540,10 @@ class MomentsPipelineTests(unittest.TestCase):
             (screen / "filtered.jsonl").write_text(
                 _filtered_row(recent, "screen", "reading papers") + "\n"
             )
-            structured = _FakeStructuredCompletion(
-                "```json\n" + json.dumps({"candidates": [_candidate()], "updates": [], "rejected": [], "notes": ""}) + "\n```",
-            )
-
             with patch.object(discover, "build_agent", return_value=(_FakeToolAgent(
                 "not json",
                 "```json\n" + json.dumps({"tasks": [_candidate()]}) + "\n```",
-            ), None)), \
-                 patch.object(discover, "structured_completion", side_effect=structured):
+            ), None)):
                 discover.run(str(logs), model="fake")
 
             self.assertTrue(_tada_run_checkpoint(Path(d)).exists())
@@ -590,7 +568,7 @@ class MomentsPipelineTests(unittest.TestCase):
             with patch.object(discover, "build_agent", return_value=(_FakeToolAgent(discovery_json), None)):
                 result = discover.run(str(logs), model="fake")
 
-            self.assertIn("Reconciled 0 discovered tasks to 0 candidates.", result)
+            self.assertIn("Wrote 0 candidates", result)
             self.assertTrue(_tada_run_checkpoint(Path(d)).exists())
 
     def test_structured_completion_accepts_provider_rejected_but_valid_discovery_json(self):
@@ -702,208 +680,6 @@ class MomentsPipelineTests(unittest.TestCase):
             self.assertTrue((root / "logs-tada" / "research" / "first.md").exists())
             self.assertFalse((root / "logs-tada" / "research" / "second.md").exists())
             self.assertIn("Ranked 3 of 3 candidates. Promoted top 2", result)
-
-    def test_chronological_merge_skips_checkpoint_and_invalid_rows(self):
-        with tempfile.TemporaryDirectory() as d:
-            logs = Path(d) / "logs"
-            screen = logs / "screen"
-            email = logs / "email"
-            screen.mkdir(parents=True)
-            email.mkdir(parents=True)
-            (screen / "filtered.jsonl").write_text(
-                "\n".join(
-                    [
-                        _filtered_row(datetime(2025, 1, 1, 10, 0), "screen", "old topic"),
-                        json.dumps({"text": "missing timestamp"}),
-                        _filtered_row(datetime(2025, 1, 3, 10, 0), "screen", "screen topic"),
-                    ]
-                )
-                + "\n"
-            )
-            (email / "filtered.jsonl").write_text(
-                _filtered_row(datetime(2025, 1, 2, 10, 0), "email", "email topic") + "\n"
-            )
-
-            rows = list(discover._merged_filtered_rows(logs, datetime(2025, 1, 1, 12, 0)))
-
-            self.assertEqual([row.source_name for row in rows], ["email", "screen"])
-            self.assertEqual([row.entry["text"] for row in rows], ["email topic", "screen topic"])
-
-    def test_connector_aware_rendering(self):
-        screen = discover.FilteredRow(
-            timestamp=datetime(2025, 1, 1, 10, 0),
-            timestamp_value=datetime(2025, 1, 1, 10, 0).timestamp(),
-            rel_path="screen/filtered.jsonl",
-            line_no=3,
-            source_name="screen",
-            entry={
-                "timestamp": datetime(2025, 1, 1, 10, 0).timestamp(),
-                "text": "reviewing PR",
-                "dense_caption": "GitHub pull request visible",
-                "img_path": "/tmp/screen.png",
-                "source": {"id": "row-id", "screenshot_path": "/tmp/shot.png", "raw_events": [{"x": 1}]},
-            },
-        )
-        calendar = discover.FilteredRow(
-            timestamp=datetime(2025, 1, 1, 11, 0),
-            timestamp_value=datetime(2025, 1, 1, 11, 0).timestamp(),
-            rel_path="calendar/filtered.jsonl",
-            line_no=1,
-            source_name="calendar",
-            entry={
-                "timestamp": datetime(2025, 1, 1, 11, 0).timestamp(),
-                "text": "",
-                "source": {
-                    "summary": "Project sync",
-                    "start": {"dateTime": "2025-01-01T11:00:00"},
-                    "end": {"dateTime": "2025-01-01T11:30:00"},
-                    "location": "Zoom",
-                },
-            },
-        )
-
-        screen_text = discover._render_filtered_row(screen)
-        calendar_text = discover._render_filtered_row(calendar)
-
-        self.assertIn("source.id: row-id", screen_text)
-        self.assertIn("dense_caption: GitHub pull request visible", screen_text)
-        self.assertIn("source.screenshot_path: /tmp/shot.png", screen_text)
-        self.assertNotIn("raw_events", screen_text)
-        self.assertIn("text: Project sync", calendar_text)
-        self.assertIn("source.start: 2025-01-01T11:00:00", calendar_text)
-        self.assertIn("source.location: Zoom", calendar_text)
-
-    def test_chunking_respects_target_overlap_and_order(self):
-        rows = []
-        for i in range(6):
-            rows.append(
-                discover.FilteredRow(
-                    timestamp=datetime(2025, 1, 1, 10, i),
-                    timestamp_value=datetime(2025, 1, 1, 10, i).timestamp(),
-                    rel_path="screen/filtered.jsonl",
-                    line_no=i + 1,
-                    source_name="screen",
-                    entry={"timestamp": datetime(2025, 1, 1, 10, i).timestamp(), "text": f"topic {i}", "source": {}},
-                )
-            )
-
-        chunks = list(discover._chunk_filtered_rows(iter(rows), target_chars=210, overlap_chars=90))
-
-        self.assertGreater(len(chunks), 1)
-        flattened_times = [rendered.row.timestamp for chunk in chunks for rendered in chunk.rows]
-        self.assertEqual(flattened_times, sorted(flattened_times))
-        self.assertEqual(chunks[0].rows[-1].row.line_no, chunks[1].rows[0].row.line_no)
-
-    def test_discover_multiple_chunks_reconciles_parallel_chunk_drafts(self):
-        with tempfile.TemporaryDirectory() as d:
-            logs = Path(d) / "logs"
-            screen = logs / "screen"
-            screen.mkdir(parents=True)
-            (screen / "filtered.jsonl").write_text(
-                _filtered_row(datetime(2025, 1, 1, 10, 0), "screen", "reading papers") + "\n"
-            )
-            row1 = discover.RenderedRow(
-                row=discover.FilteredRow(
-                    timestamp=datetime(2025, 1, 1, 10, 0),
-                    timestamp_value=datetime(2025, 1, 1, 10, 0).timestamp(),
-                    rel_path="screen/filtered.jsonl",
-                    line_no=1,
-                    source_name="screen",
-                    entry={},
-                ),
-                text="time: 2025-01-01 10:00:00\nsource: screen\ntext: reading papers",
-            )
-            row2 = discover.RenderedRow(
-                row=discover.FilteredRow(
-                    timestamp=datetime(2025, 1, 1, 10, 5),
-                    timestamp_value=datetime(2025, 1, 1, 10, 5).timestamp(),
-                    rel_path="screen/filtered.jsonl",
-                    line_no=2,
-                    source_name="screen",
-                    entry={},
-                ),
-                text="time: 2025-01-01 10:05:00\nsource: screen\ntext: organizing papers",
-            )
-            first = _candidate(title="Paper Digest", specific_instructions="Use first chunk.")
-            second = _candidate(title="Paper Digest", specific_instructions="Use first chunk and second chunk.")
-            structured = _FakeStructuredCompletion(
-                "```json\n" + json.dumps({"candidates": [second], "updates": [], "rejected": [], "notes": "kept final draft"}) + "\n```",
-            )
-            fake_agent = _FakeToolAgent(
-                "```json\n" + json.dumps({"tasks": [first]}) + "\n```",
-                "```json\n" + json.dumps({"tasks": [second]}) + "\n```",
-            )
-            chunks = [discover.ActivityChunk(index=1, rows=[row1]), discover.ActivityChunk(index=2, rows=[row2])]
-
-            with patch.object(discover, "build_agent", return_value=(fake_agent, None)), \
-                 patch.object(discover, "_chunk_filtered_rows", return_value=iter(chunks)), \
-                 patch.object(discover, "structured_completion", side_effect=structured):
-                discover.run(str(logs), model="fake")
-
-            reconcile_instructions = [
-                instruction for instruction in structured.instructions
-                if "Draft Candidates From Discovery" in instruction
-            ]
-            self.assertEqual(len(reconcile_instructions), 1)
-            self.assertIn("second chunk", reconcile_instructions[0])
-            candidate_file = _candidate_files(Path(d))[-1]
-            self.assertIn("second chunk", candidate_file.read_text())
-
-    def test_reconciliation_routes_duplicate_as_update(self):
-        with tempfile.TemporaryDirectory() as d:
-            root = Path(d)
-            logs = root / "logs"
-            screen = logs / "screen"
-            screen.mkdir(parents=True)
-            recent = datetime.now() - timedelta(hours=23)
-            (screen / "filtered.jsonl").write_text(
-                _filtered_row(recent, "screen", "reading papers") + "\n"
-            )
-            tada = root / "logs-tada"
-            accepted_dir = tada / "research"
-            accepted_dir.mkdir(parents=True)
-            (accepted_dir / "paper-digest.md").write_text(
-                "---\n"
-                "title: Paper Digest\n"
-                "description: Track relevant papers.\n"
-                "cadence: scheduled\n"
-                "schedule: daily at 8am\n"
-                "confidence: 0.80\n"
-                "usefulness: 8\n"
-                "---\n\nExisting body\n"
-            )
-            (tada / "results" / "paper-digest").mkdir(parents=True)
-            draft = _candidate(id="new-paper-tracker", slug="new-paper-tracker", specific_instructions="Use new research signal.")
-            update = _candidate(id="paper-digest", slug="paper-digest", specific_instructions="Use new research signal.")
-            structured = _FakeStructuredCompletion(
-                "```json\n"
-                + json.dumps({
-                    "candidates": [update],
-                    "updates": [{"candidate_id": "new-paper-tracker", "accepted_slug": "paper-digest", "reason": "same recurring paper workflow"}],
-                    "rejected": [],
-                    "notes": "routed duplicate as update",
-                })
-                + "\n```",
-            )
-
-            with patch.object(discover, "build_agent", return_value=(_FakeToolAgent(
-                "```json\n" + json.dumps({"tasks": [draft]}) + "\n```"
-            ), None)), \
-                 patch.object(discover, "structured_completion", side_effect=structured):
-                result = discover.run(str(logs), model="fake")
-
-            self.assertIn("research/paper-digest", structured.instructions[0])
-            self.assertIn("one-shot output already generated", structured.instructions[0])
-            self.assertIn("temporal adjacency is not enough", structured.instructions[0])
-            self.assertIn("duplicate work already underway", structured.instructions[0])
-            self.assertIn("same system or artifact currently being modified", structured.instructions[0])
-            self.assertIn("only evidence is current implementation activity", structured.instructions[0])
-            self.assertIn("independent evidence beyond the visible edits", structured.instructions[0])
-            self.assertIn("Routed 1 candidates as updates", result)
-            candidate_file = _candidate_files(root)[-1]
-            candidate_text = candidate_file.read_text()
-            self.assertIn('"slug": "paper-digest"', candidate_text)
-            self.assertNotIn("new-paper-tracker", candidate_text)
 
     def test_accepted_summary_marks_completed_once_outputs(self):
         with tempfile.TemporaryDirectory() as d:

@@ -2,6 +2,7 @@
 
 import json
 import logging
+import mimetypes
 import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -9,7 +10,7 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Request
-from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel
 
 import asyncio
@@ -51,21 +52,14 @@ def _get_tada_dir(request: Request) -> Path:
     return Path(request.app.state.server.config.tada_dir).resolve()
 
 
-def _extract_markdown_title(path: Path) -> str:
-    text = path.read_text(errors="replace")
-    fm = parse_frontmatter(text)
-    title = (fm.get("title") or "").strip().strip("\"'")
-    if title:
-        return title
-    for line in text.splitlines():
-        stripped = line.strip()
-        if stripped.startswith("# "):
-            return stripped[2:].strip() or path.stem.replace("-", " ").title()
-    return path.stem.replace("-", " ").title()
-
-
 def _output_pages_dir(result_dir: Path) -> Path:
     return result_dir / OUTPUT_SUBDIR
+
+
+_SERVED_SUFFIXES = {
+    ".html", ".htm", ".css", ".js", ".mjs", ".json",
+    ".png", ".jpg", ".jpeg", ".svg", ".webp",
+}
 
 
 def _list_output_pages(result_dir: Path) -> list[Path]:
@@ -74,7 +68,7 @@ def _list_output_pages(result_dir: Path) -> list[Path]:
         return []
     base = output_pages_dir.resolve()
     pages: list[Path] = []
-    for path in output_pages_dir.rglob("*.md"):
+    for path in output_pages_dir.rglob("*.html"):
         if not path.is_file():
             continue
         rel = path.relative_to(output_pages_dir)
@@ -86,11 +80,10 @@ def _list_output_pages(result_dir: Path) -> list[Path]:
             continue
         pages.append(path)
 
-    def sort_key(path: Path) -> tuple[int, str, str]:
+    def sort_key(path: Path) -> tuple[int, str]:
         rel = path.relative_to(output_pages_dir).as_posix()
-        name = path.name.lower()
-        priority = 0 if name == "index.md" else 1 if name == "overview.md" else 2
-        return (priority, _extract_markdown_title(path).lower(), rel.lower())
+        priority = 0 if path.name.lower() == "index.html" else 1
+        return (priority, rel.lower())
 
     return sorted(pages, key=sort_key)
 
@@ -99,7 +92,7 @@ def _page_meta(path: Path, output_pages_dir: Path) -> dict:
     stat = path.stat()
     return {
         "path": path.relative_to(output_pages_dir).as_posix(),
-        "title": _extract_markdown_title(path),
+        "title": path.stem.replace("-", " ").title(),
         "bytes": stat.st_size,
         "updated_at": datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat(),
     }
@@ -115,7 +108,7 @@ def _resolve_output_page(tada_dir: Path, slug: str, page_path: str) -> Path | No
         target.relative_to(base)
     except ValueError:
         return None
-    if not target.is_file() or target.suffix.lower() != ".md":
+    if not target.is_file() or target.suffix.lower() not in _SERVED_SUFFIXES:
         return None
     return target
 
@@ -234,7 +227,7 @@ async def list_results(request: Request, include_dismissed: bool = False):
 
 @router.get("/results/{slug}/pages")
 async def list_result_pages(slug: str, request: Request):
-    """List markdown pages for a completed moment result."""
+    """List HTML pages for a completed moment result."""
     data = await asyncio.to_thread(_list_result_pages_data, _get_tada_dir(request), slug)
     if data is None:
         return JSONResponse({"error": "not found"}, status_code=404)
@@ -243,11 +236,14 @@ async def list_result_pages(slug: str, request: Request):
 
 @router.get("/results/{slug}/pages/{page_path:path}")
 async def get_result_page(slug: str, page_path: str, request: Request):
-    """Serve a raw markdown page for a completed moment result."""
+    """Serve a mini-web-app asset (html, css, js, json, image) for a moment."""
     path = _resolve_output_page(_get_tada_dir(request), slug, page_path)
     if path is None:
         return JSONResponse({"error": "not found"}, status_code=404)
-    return PlainTextResponse(path.read_text(errors="replace"), media_type="text/markdown")
+    media_type, _ = mimetypes.guess_type(path.name)
+    if media_type is None:
+        media_type = "application/octet-stream"
+    return Response(path.read_bytes(), media_type=media_type)
 
 
 @router.put("/{slug}/state")
@@ -445,6 +441,14 @@ async def rerun_moment(slug: str, request: Request):
 FEEDBACK_SYSTEM_PROMPT = (Path(__file__).resolve().parent.parent / "prompts" / "feedback.txt").read_text()
 
 
+_FEEDBACK_FILE_LANGS = {
+    ".html": "html", ".htm": "html",
+    ".css": "css",
+    ".js": "javascript", ".mjs": "javascript",
+    ".json": "json",
+}
+
+
 def _read_moment_files(result_dir: Path) -> str:
     """Read all moment output files for the feedback system prompt."""
     parts = []
@@ -453,12 +457,19 @@ def _read_moment_files(result_dir: Path) -> str:
         content = meta_path.read_text(errors="replace")
         parts.append(f"### meta.json\n```json\n{content}\n```")
     output_pages_dir = _output_pages_dir(result_dir)
-    for path in _list_output_pages(result_dir):
-        content = path.read_text(errors="replace")
-        if len(content) > 10000:
-            content = content[:10000] + "\n... (truncated)"
-        rel = path.relative_to(output_pages_dir).as_posix()
-        parts.append(f"### {output_pages_dir.name}/{rel}\n```markdown\n{content}\n```")
+    if output_pages_dir.is_dir():
+        for path in sorted(output_pages_dir.rglob("*")):
+            if not path.is_file():
+                continue
+            suffix = path.suffix.lower()
+            lang = _FEEDBACK_FILE_LANGS.get(suffix)
+            if lang is None:
+                continue
+            content = path.read_text(errors="replace")
+            if len(content) > 10000:
+                content = content[:10000] + "\n... (truncated)"
+            rel = path.relative_to(output_pages_dir).as_posix()
+            parts.append(f"### {output_pages_dir.name}/{rel}\n```{lang}\n{content}\n```")
     return "\n\n".join(parts)
 
 

@@ -17,7 +17,9 @@ Not allowed:
 - Do not update existing normal content pages.
 - Do not update `index.md`, `log.md`, or `schema.md`.
 - Do not do catalog repair or operations logging.
+<!-- POWERNAP:TOOL_PLUMBING_BEGIN -->
 - Do not call `write_file` or `edit_file`; the harness will apply the final result.
+<!-- POWERNAP:TOOL_PLUMBING_END -->
 
 Execution guidance:
 - Read evidence for this candidate before writing.
@@ -92,7 +94,9 @@ Date grounding:
 
 Ignore raw event streams and model artifacts unless a prompt specifically asks for them: `raw_events*`, `checkpoints.jsonl`, `predictions.jsonl`, `metrics.jsonl`, `retriever*`.
 
+<!-- POWERNAP:TOOL_PLUMBING_BEGIN -->
 Use tools to read evidence directly. Use subagents for independent source groups. Use shell analysis for counts, repeated entities, time patterns, and coverage checks. Use browser or web search only to enrich claims that are already grounded in logs.
+<!-- POWERNAP:TOOL_PLUMBING_END -->
 
 ## Inventory Plan
 

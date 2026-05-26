@@ -90,9 +90,7 @@ def _status_entry(
     if last_completed is None and has_completed_run:
         last_completed = _iso_from_checkpoint(checkpoint)
     blocked_reason = None
-    if not has_completed_run:
-        blocked_reason = "first_run"
-    elif running:
+    if running:
         blocked_reason = "running"
     elif not enabled:
         blocked_reason = "disabled"
@@ -102,7 +100,7 @@ def _status_entry(
         "schedule": schedule,
         "next_run_at": next_run.isoformat() if next_run else None,
         "last_completed_at": last_completed,
-        "manual_start_allowed": enabled and has_completed_run and not running,
+        "manual_start_allowed": enabled and not running,
         "manual_start_blocked_reason": blocked_reason,
     }
 

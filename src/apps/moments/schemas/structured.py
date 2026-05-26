@@ -22,6 +22,9 @@ class CandidatePayload(StrictModel):
     trigger: str
     confidence: float
     usefulness: int
+    disregard: int = 5
+    surprise: int = 5
+    is_update: bool = False  # True iff this draft reuses an existing accepted moment's slug.
     specific_instructions: str
     desired_artifact: str
     likely_next_need: str
@@ -37,26 +40,8 @@ class CandidatePayload(StrictModel):
         return self
 
 
-class DraftRejectOp(StrictModel):
-    id: str
-    reason: str
-
-
 class DiscoveryPayload(StrictModel):
     tasks: list[CandidatePayload] = []
-
-
-class ReconcileUpdate(StrictModel):
-    candidate_id: str
-    accepted_slug: str
-    reason: str
-
-
-class ReconcilePayload(StrictModel):
-    candidates: list[CandidatePayload]
-    updates: list[ReconcileUpdate] = []
-    rejected: list[DraftRejectOp] = []
-    notes: str = ""
 
 
 class PromotionReject(StrictModel):
