@@ -32,6 +32,7 @@ STAGE_MAX_TURNS: dict[str, int] = {
     "memory_finalize": 30,
     "memory_lint": 60,
     "execute": 90,
+    "editor": 30,
 }
 
 

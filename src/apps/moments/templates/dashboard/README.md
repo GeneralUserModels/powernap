@@ -2,6 +2,8 @@
 
 Stats row + filterable/searchable card grid. Good for metrics, tracking, status overviews.
 
+**Only pick this template when you have genuine KPIs.** Email drafts, paper reviews, briefings, decision matrices, specs, runbooks, single-document outputs — use `blank/` instead. Do not fabricate `stats` ("3 sections", "5 items") just because the template ships with a `StatRow`.
+
 ## DATA Schema
 
 ```js

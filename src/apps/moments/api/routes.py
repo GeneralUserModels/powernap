@@ -7,7 +7,7 @@ import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
@@ -19,12 +19,21 @@ import time as _time
 from apps.moments.runtime.execute import _parse_frontmatter as parse_frontmatter
 from apps.moments.core.paths import find_task_md, get_topic, list_task_files
 from apps.moments.runtime.scheduler import save_run, load_run_history
+from apps.moments.runtime.editor import (
+    EditorSession,
+    MomentEditorError,
+    load_latest_editor_session,
+    prepare_editor_bridge,
+    revision_for_output,
+    run_editor_turn,
+)
 from server.process_jobs import relay_worker_event
 from apps.moments.core.state import (
     load_state,
     save_state,
     DEFAULT_SLUG_STATE,
 )
+from agent.cli_backends import CliAgentAuthError, CliAgentError, cli_config_payload, load_cli_config
 from chat import ChatAgent, ChatSession
 
 logger = logging.getLogger(__name__)
@@ -46,6 +55,10 @@ class ScheduleUpdate(BaseModel):
 
 class ViewEnd(BaseModel):
     duration_ms: int
+
+
+class MomentDraftPatch(BaseModel):
+    patch: dict[str, Any]
 
 
 def _get_tada_dir(request: Request) -> Path:
@@ -243,7 +256,11 @@ async def get_result_page(slug: str, page_path: str, request: Request):
     media_type, _ = mimetypes.guess_type(path.name)
     if media_type is None:
         media_type = "application/octet-stream"
-    return Response(path.read_bytes(), media_type=media_type)
+    return Response(
+        path.read_bytes(),
+        media_type=media_type,
+        headers={"Cache-Control": "no-store, max-age=0"},
+    )
 
 
 @router.put("/{slug}/state")
@@ -310,6 +327,29 @@ async def record_view_end(slug: str, body: ViewEnd, request: Request):
     all_state[slug] = entry
     save_state(tada_dir, all_state)
     return {"time_spent_ms": entry["time_spent_ms"]}
+
+
+# ── Draft State ───────────────────────────────────────────────
+
+@router.get("/{slug}/drafts")
+async def get_moment_drafts(slug: str, request: Request):
+    """Return disk-backed draft values for a generated moment app."""
+    result_dir = _result_dir(_get_tada_dir(request), slug)
+    if not _list_output_pages(result_dir):
+        return JSONResponse({"error": "Moment not found"}, status_code=404)
+    return {"drafts": _load_saved_drafts(result_dir)}
+
+
+@router.patch("/{slug}/drafts")
+async def patch_moment_drafts(slug: str, body: MomentDraftPatch, request: Request):
+    """Persist changed PN.useDraft values for a generated moment app."""
+    result_dir = _result_dir(_get_tada_dir(request), slug)
+    if not _list_output_pages(result_dir):
+        return JSONResponse({"error": "Moment not found"}, status_code=404)
+    drafts = _load_saved_drafts(result_dir)
+    drafts.update(body.patch)
+    _save_saved_drafts(result_dir, drafts)
+    return {"drafts": drafts}
 
 
 # ── Re-execution ─────────────────────────────────────────────
@@ -385,6 +425,7 @@ async def rerun_moment(slug: str, request: Request):
                             "last_run_at": run_history.get(slug),
                             "subagent_model": subagent_model,
                             "subagent_api_key": subagent_api_key,
+                            "cli_backend_config": cli_config_payload(cfg),
                             "activity": {
                                 "agent": activity_key,
                                 "message": run_msg,
@@ -434,6 +475,252 @@ async def rerun_moment(slug: str, request: Request):
 
     asyncio.create_task(_run_rerun())
     return JSONResponse({"status": "started"}, status_code=202)
+
+
+# ── Direct App Editor ─────────────────────────────────────────
+
+
+class EditorMessageBody(BaseModel):
+    content: str
+    drafts: dict[str, Any] | None = None
+
+
+def _result_dir(tada_dir: Path, slug: str) -> Path:
+    return tada_dir / "results" / slug
+
+
+def _drafts_path(result_dir: Path) -> Path:
+    return result_dir / ".state" / "drafts.json"
+
+
+def _load_saved_drafts(result_dir: Path) -> dict[str, Any]:
+    path = _drafts_path(result_dir)
+    if not path.is_file():
+        return {}
+    try:
+        data = json.loads(path.read_text())
+    except Exception:
+        logger.warning("Could not read moment drafts from %s", path, exc_info=True)
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _save_saved_drafts(result_dir: Path, drafts: dict[str, Any]) -> None:
+    path = _drafts_path(result_dir)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(drafts, indent=2, sort_keys=True))
+    tmp.replace(path)
+
+
+def _editor_error_response(message: str, status_code: int = 400, *, setup_required: bool = False):
+    return JSONResponse(
+        {"error": message, "setup_required": setup_required},
+        status_code=status_code,
+    )
+
+
+def _persist_editor(entry: EditorSession) -> None:
+    entry.save()
+    logger.info("Tada editor transcript saved to %s", entry.path)
+
+
+def _new_editor_session(result_dir: Path) -> EditorSession:
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    return EditorSession(path=result_dir / f"edit_{timestamp}.md")
+
+
+def _get_or_load_editor_session(state, slug: str, result_dir: Path) -> EditorSession | None:
+    entry = state.editor_sessions.get(slug)
+    if entry is not None:
+        return entry
+
+    entry = load_latest_editor_session(result_dir)
+    if entry is not None:
+        state.editor_sessions[slug] = entry
+    return entry
+
+
+def _load_editor_config(request: Request):
+    config = load_cli_config(request.app.state.server.config)
+    if config is None:
+        return None
+    return config
+
+
+async def _reserve_editor_slug(state, slug: str):
+    if slug in state.moments_in_flight_slugs:
+        return False
+    state.moments_in_flight_slugs.add(slug)
+    return True
+
+
+async def _stream_editor_response(
+    *,
+    slug: str,
+    entry: EditorSession,
+    body: EditorMessageBody,
+    request: Request,
+    config,
+):
+    state = request.app.state.server
+    result_dir = _result_dir(_get_tada_dir(request), slug)
+    try:
+        result = await asyncio.to_thread(
+            run_editor_turn,
+            result_dir=result_dir,
+            slug=slug,
+            user_message=body.content,
+            draft_snapshot=body.drafts or {},
+            conversation=entry.messages,
+            cli_config=config,
+        )
+        entry.add_assistant_message(result.summary)
+        _persist_editor(entry)
+        if result.draft_patch:
+            drafts = _load_saved_drafts(result_dir)
+            drafts.update(result.draft_patch)
+            _save_saved_drafts(result_dir, drafts)
+            yield f"data: {json.dumps({'draft_patch': result.draft_patch})}\n\n"
+        revision = revision_for_output(result_dir / OUTPUT_SUBDIR)
+        yield f"data: {json.dumps({'token': result.summary})}\n\n"
+        yield f"data: {json.dumps({'changed_files': result.changed_files, 'revision': revision, 'done': True})}\n\n"
+    except CliAgentAuthError as exc:
+        message = "Codex/Claude is not signed in. Open Settings and sign in to the selected Agent Backend."
+        entry.add_assistant_message(message)
+        _persist_editor(entry)
+        logger.warning("Tada editor auth failure for %s: %s", slug, exc)
+        yield f"data: {json.dumps({'error': message, 'setup_required': True, 'done': True})}\n\n"
+    except (CliAgentError, MomentEditorError) as exc:
+        message = f"I couldn't apply that change: {exc}"
+        entry.add_assistant_message(message)
+        _persist_editor(entry)
+        logger.warning("Tada editor turn failed for %s: %s", slug, exc)
+        yield f"data: {json.dumps({'error': message, 'done': True})}\n\n"
+    except Exception as exc:
+        message = "I couldn't apply that change because the editor failed unexpectedly."
+        entry.add_assistant_message(message)
+        _persist_editor(entry)
+        logger.exception("Tada editor turn crashed for %s", slug)
+        yield f"data: {json.dumps({'error': message, 'detail': str(exc), 'done': True})}\n\n"
+    finally:
+        state.moments_in_flight_slugs.discard(slug)
+
+
+@router.post("/{slug}/editor/prepare")
+async def prepare_editor(slug: str, request: Request):
+    """Install/refresh the iframe draft bridge for an existing moment app."""
+    tada_dir = _get_tada_dir(request)
+    result_dir = _result_dir(tada_dir, slug)
+    if not _list_output_pages(result_dir):
+        return JSONResponse({"error": "Moment not found"}, status_code=404)
+    try:
+        return prepare_editor_bridge(result_dir)
+    except MomentEditorError as exc:
+        return _editor_error_response(str(exc), status_code=400)
+
+
+@router.post("/{slug}/editor/start")
+async def start_editor(slug: str, body: EditorMessageBody, request: Request):
+    """Start a direct app-editing conversation."""
+    if not body.content.strip():
+        return _editor_error_response("Message cannot be empty", status_code=400)
+
+    config = _load_editor_config(request)
+    if config is None:
+        return _editor_error_response(
+            "Choose Codex CLI or Claude Code CLI in Settings before editing generated apps.",
+            status_code=400,
+            setup_required=True,
+        )
+
+    state = request.app.state.server
+    tada_dir = _get_tada_dir(request)
+    result_dir = _result_dir(tada_dir, slug)
+    if not _list_output_pages(result_dir):
+        return JSONResponse({"error": "Moment not found"}, status_code=404)
+
+    if not await _reserve_editor_slug(state, slug):
+        return _editor_error_response("This moment is already executing or being edited", status_code=409)
+
+    try:
+        prepare_editor_bridge(result_dir)
+    except MomentEditorError as exc:
+        state.moments_in_flight_slugs.discard(slug)
+        return _editor_error_response(str(exc), status_code=400)
+
+    existing = state.editor_sessions.pop(slug, None)
+    if existing is not None:
+        _persist_editor(existing)
+
+    entry = _new_editor_session(result_dir)
+    entry.add_user_message(body.content)
+    state.editor_sessions[slug] = entry
+
+    return StreamingResponse(
+        _stream_editor_response(slug=slug, entry=entry, body=body, request=request, config=config),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@router.post("/{slug}/editor/message")
+async def send_editor_message(slug: str, body: EditorMessageBody, request: Request):
+    """Send a message in the active direct app editor conversation."""
+    if not body.content.strip():
+        return _editor_error_response("Message cannot be empty", status_code=400)
+
+    config = _load_editor_config(request)
+    if config is None:
+        return _editor_error_response(
+            "Choose Codex CLI or Claude Code CLI in Settings before editing generated apps.",
+            status_code=400,
+            setup_required=True,
+    )
+
+    state = request.app.state.server
+    result_dir = _result_dir(_get_tada_dir(request), slug)
+    if not _list_output_pages(result_dir):
+        return JSONResponse({"error": "Moment not found"}, status_code=404)
+
+    entry = _get_or_load_editor_session(state, slug, result_dir)
+    if entry is None:
+        return _editor_error_response("No active editor conversation for this moment", status_code=409)
+
+    if not await _reserve_editor_slug(state, slug):
+        return _editor_error_response("This moment is already executing or being edited", status_code=409)
+
+    entry.add_user_message(body.content)
+
+    return StreamingResponse(
+        _stream_editor_response(slug=slug, entry=entry, body=body, request=request, config=config),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@router.post("/{slug}/editor/end")
+async def end_editor(slug: str, request: Request):
+    """End the editor conversation and save its transcript."""
+    state = request.app.state.server
+    entry = state.editor_sessions.pop(slug, None)
+    if entry is None:
+        return _editor_error_response("No active editor conversation for this moment", status_code=409)
+    _persist_editor(entry)
+    return {"status": "ended", "filename": entry.path.name}
+
+
+@router.get("/{slug}/editor/conversation")
+async def get_editor_conversation(slug: str, request: Request):
+    """Get the current editor conversation state."""
+    state = request.app.state.server
+    result_dir = _result_dir(_get_tada_dir(request), slug)
+    if not _list_output_pages(result_dir):
+        return JSONResponse({"error": "Moment not found"}, status_code=404)
+    entry = _get_or_load_editor_session(state, slug, result_dir)
+    if entry is not None:
+        return {"active": True, "messages": entry.visible_messages()}
+    return {"active": False, "messages": []}
 
 
 # ── Feedback ──────────────────────────────────────────────────

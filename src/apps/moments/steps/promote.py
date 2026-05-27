@@ -31,7 +31,7 @@ from apps.moments.core.candidates import (
     read_candidate_jsonl,
     write_accepted_moment,
 )
-from apps.moments.core.paths import find_task_md, get_topic, summarize_tada_tasks
+from apps.moments.core.paths import find_task_md, get_topic, list_active_task_files, list_task_files, summarize_tada_tasks
 from apps.moments.schemas.structured import PromotionPayload
 
 _PROMPTS = Path(__file__).resolve().parent.parent / "prompts"
@@ -51,21 +51,89 @@ def _feedback_state_summary(tada_dir: Path) -> str:
     return "\n\n".join(parts) or "- (none)"
 
 
-def _route_existing_slug_updates(tada_dir: Path, candidates: list[MomentCandidate]) -> tuple[list[MomentCandidate], int]:
+def _route_existing_slug_updates(
+    tada_dir: Path, candidates: list[MomentCandidate]
+) -> tuple[list[MomentCandidate], int, int]:
+    """Route candidates to existing accepted moments by slug.
+
+    Returns (routed_candidates, retopiced_count, renormalized_count).
+
+    Two rescues happen here:
+    1. retopic: candidate slug matches an existing slug but the candidate's
+       topic disagrees — rewrite the topic so the same .md gets overwritten.
+    2. renormalize: candidate slug is `{topic}-{existing_slug}` (the model
+       copy-pasted the displayed `topic/slug` form and turned `/` into `-`).
+       Strip the topic prefix and adopt the existing slug + topic so this
+       candidate is routed as an update of the real moment.
+    """
+    existing_by_slug: dict[str, tuple[str, Path]] = {}
+    for md in list_task_files(tada_dir):
+        existing_by_slug[md.stem] = (get_topic(md, tada_dir), md)
+
     routed: list[MomentCandidate] = []
-    routed_count = 0
+    retopiced = 0
+    renormalized = 0
     for candidate in candidates:
-        accepted_path = find_task_md(tada_dir, candidate.slug)
-        if accepted_path is None:
+        match = existing_by_slug.get(candidate.slug)
+        if match is None:
+            stripped = _strip_topic_prefix(candidate.slug, candidate.topic)
+            if stripped and stripped in existing_by_slug:
+                accepted_topic, _ = existing_by_slug[stripped]
+                routed.append(replace(candidate, slug=stripped, topic=accepted_topic))
+                renormalized += 1
+                continue
             routed.append(candidate)
             continue
-        accepted_topic = get_topic(accepted_path, tada_dir)
+        accepted_topic, _ = match
         if candidate.topic == accepted_topic:
             routed.append(candidate)
             continue
         routed.append(replace(candidate, topic=accepted_topic))
-        routed_count += 1
-    return routed, routed_count
+        retopiced += 1
+    return routed, retopiced, renormalized
+
+
+def _strip_topic_prefix(slug: str, topic: str) -> str | None:
+    if not topic:
+        return None
+    prefix = f"{topic}-"
+    if slug.startswith(prefix) and len(slug) > len(prefix):
+        return slug[len(prefix):]
+    return None
+
+
+def _existing_slug_update_ids(tada_dir: Path, candidates: list[MomentCandidate]) -> set[str]:
+    active_slugs = {path.stem for path in list_active_task_files(tada_dir)}
+    return {
+        candidate.id
+        for candidate in candidates
+        if candidate.slug in active_slugs
+    }
+
+
+def _promoted_with_required_updates(
+    *,
+    candidates: list[MomentCandidate],
+    ranked: list[MomentCandidate],
+    update_ids: set[str],
+    n: int,
+) -> tuple[list[MomentCandidate], int]:
+    required_updates = [candidate for candidate in candidates if candidate.id in update_ids]
+    promoted: list[MomentCandidate] = []
+    seen: set[str] = set()
+
+    for candidate in required_updates:
+        promoted.append(candidate)
+        seen.add(candidate.id)
+
+    remaining = [candidate for candidate in ranked if candidate.id not in seen]
+    if n > 0:
+        remaining = remaining[:n]
+    for candidate in remaining:
+        promoted.append(candidate)
+        seen.add(candidate.id)
+
+    return promoted, len(required_updates)
 
 
 @retry(
@@ -167,7 +235,8 @@ def run(
     if candidate_path is None:
         return "no candidate files to promote"
     candidates = read_candidate_jsonl(candidate_path)
-    candidates, routed_updates = _route_existing_slug_updates(tada_path, candidates)
+    candidates, routed_updates, renormalized_updates = _route_existing_slug_updates(tada_path, candidates)
+    required_update_ids = _existing_slug_update_ids(tada_path, candidates)
 
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
     # For same-slug candidates, inline the existing accepted moment's markdown
@@ -206,7 +275,12 @@ def run(
             cli_config=cli_config,
             candidate_path=candidate_path,
         )
-    promoted = ranked[:n] if n > 0 else ranked
+    promoted, required_updates = _promoted_with_required_updates(
+        candidates=candidates,
+        ranked=ranked,
+        update_ids=required_update_ids,
+        n=n,
+    )
     for candidate in promoted:
         write_accepted_moment(tada_path, candidate)
     if write_run_checkpoint:
@@ -215,4 +289,8 @@ def run(
     summary = f"{result}\n\nRanked {len(ranked)} of {len(candidates)} candidates. Promoted top {len(promoted)} from {candidate_path}"
     if routed_updates:
         summary += f"\nRouted {routed_updates} same-slug candidates to existing accepted moment paths."
+    if renormalized_updates:
+        summary += f"\nRenormalized {renormalized_updates} topic-prefixed candidate(s) to existing slugs."
+    if required_updates:
+        summary += f"\nAlways promoted {required_updates} existing-moment update(s)."
     return summary

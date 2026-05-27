@@ -25,6 +25,12 @@ export type AgentBackendInfo = {
 export type AgentBackendStatus = {
   selected: "gemini" | "codex" | "claude_code";
   cli_bin_extra_path: string;
+  npm: {
+    available: boolean;
+    version: string | null;
+    bin: string | null;
+    install_url: string;
+  };
   backends: Record<string, AgentBackendInfo>;
 };
 export const getAgentBackendStatus = () =>
@@ -84,6 +90,12 @@ export const recordMomentView = (slug: string) =>
 
 export const recordMomentViewEnd = (slug: string, data: { duration_ms: number }) =>
   request("POST", `/api/moments/${slug}/view-end`, data);
+
+export const getMomentDrafts = (slug: string) =>
+  request("GET", `/api/moments/${slug}/drafts`) as Promise<{ drafts: Record<string, unknown> }>;
+
+export const patchMomentDrafts = (slug: string, patch: Record<string, unknown>) =>
+  request("PATCH", `/api/moments/${slug}/drafts`, { patch }) as Promise<{ drafts: Record<string, unknown> }>;
 
 export const rerunMoment = (slug: string) =>
   request("POST", `/api/moments/${slug}/rerun`);

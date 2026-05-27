@@ -206,6 +206,141 @@ function _writeStored(key, value) {
   } catch (e) {}
 }
 
+function _persistDraftPatch(key, value) {
+  var patch = {};
+  patch[key] = value;
+  try {
+    _dispatch("saveDraftPatch", { patch: patch });
+  } catch (e) {}
+}
+
+var _draftRegistry = {};
+var _domRestoreScheduled = false;
+
+function _domDraftKey(el) {
+  if (!el || !el.tagName) return null;
+  if (el.type === "hidden" || el.type === "submit" || el.type === "button" || el.type === "reset") return null;
+  var explicit = el.getAttribute("data-pn-draft-key") || el.getAttribute("data-draft-key");
+  if (explicit) return "dom:" + explicit;
+  var stable = el.getAttribute("name") || el.getAttribute("id") || el.getAttribute("aria-label");
+  if (stable) return "dom:" + el.tagName.toLowerCase() + ":" + stable;
+  var placeholder = el.getAttribute("placeholder");
+  if (placeholder) return "dom:" + el.tagName.toLowerCase() + ":placeholder:" + placeholder;
+  var controls = Array.prototype.slice.call(document.querySelectorAll("input, textarea, select"));
+  var index = controls.indexOf(el);
+  if (index < 0) return null;
+  return "dom:" + el.tagName.toLowerCase() + ":index:" + index;
+}
+
+function _readDomControlValue(el) {
+  if (!el) return null;
+  if (el.type === "checkbox") return !!el.checked;
+  if (el.type === "radio") return !!el.checked;
+  if (el.tagName === "SELECT" && el.multiple) {
+    return Array.prototype.slice.call(el.options)
+      .filter(function(opt) { return opt.selected; })
+      .map(function(opt) { return opt.value; });
+  }
+  return el.value;
+}
+
+function _setNativeValue(el, value) {
+  var proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype
+    : el instanceof HTMLSelectElement ? HTMLSelectElement.prototype
+    : HTMLInputElement.prototype;
+  var desc = Object.getOwnPropertyDescriptor(proto, "value");
+  if (desc && desc.set) desc.set.call(el, value);
+  else el.value = value;
+}
+
+function _writeDomControlValue(el, value) {
+  if (!el) return;
+  if (el.type === "checkbox" || el.type === "radio") {
+    el.checked = !!value;
+  } else if (el.tagName === "SELECT" && el.multiple && Array.isArray(value)) {
+    Array.prototype.forEach.call(el.options, function(opt) {
+      opt.selected = value.indexOf(opt.value) >= 0;
+    });
+  } else {
+    _setNativeValue(el, value == null ? "" : String(value));
+  }
+  try { el.dispatchEvent(new Event("input", { bubbles: true })); } catch (e) {}
+  try { el.dispatchEvent(new Event("change", { bubbles: true })); } catch (e) {}
+}
+
+function _restoreDomDraftsFromStorage() {
+  var controls = Array.prototype.slice.call(document.querySelectorAll("input, textarea, select"));
+  controls.forEach(function(el) {
+    var key = _domDraftKey(el);
+    if (!key) return;
+    var saved = _readStored(key, undefined);
+    if (saved !== undefined) _writeDomControlValue(el, saved);
+  });
+}
+
+function _scheduleDomRestore() {
+  if (_domRestoreScheduled) return;
+  _domRestoreScheduled = true;
+  setTimeout(function() {
+    _domRestoreScheduled = false;
+    _restoreDomDraftsFromStorage();
+  }, 0);
+}
+
+function _applyDomDraftPatch(patch) {
+  if (!patch || typeof patch !== "object") return;
+  var controls = Array.prototype.slice.call(document.querySelectorAll("input, textarea, select"));
+  controls.forEach(function(el) {
+    var key = _domDraftKey(el);
+    if (key && Object.prototype.hasOwnProperty.call(patch, key)) {
+      _writeDomControlValue(el, patch[key]);
+    }
+  });
+}
+
+function _registerDraft(key, value, setter) {
+  _draftRegistry[key] = { value: value, setter: setter };
+}
+
+function _unregisterDraft(key, setter) {
+  var current = _draftRegistry[key];
+  if (current && current.setter === setter) delete _draftRegistry[key];
+}
+
+function _draftSnapshot() {
+  var out = {};
+  try {
+    var prefix = "tada:moment:" + _slug() + ":";
+    for (var i = 0; i < window.localStorage.length; i++) {
+      var storageKey = window.localStorage.key(i);
+      if (!storageKey || storageKey.indexOf(prefix) !== 0) continue;
+      var draftKey = storageKey.slice(prefix.length);
+      try {
+        out[draftKey] = JSON.parse(window.localStorage.getItem(storageKey));
+      } catch (e) {}
+    }
+  } catch (e) {}
+  Object.keys(_draftRegistry).forEach(function(key) {
+    out[key] = _draftRegistry[key].value;
+  });
+  return out;
+}
+
+function _applyDraftPatch(patch) {
+  if (!patch || typeof patch !== "object") return;
+  Object.keys(patch).forEach(function(key) {
+    var value = patch[key];
+    var current = _draftRegistry[key];
+    if (current && typeof current.setter === "function") {
+      current.setter(value);
+    } else {
+      _writeStored(key, value);
+      _persistDraftPatch(key, value);
+    }
+  });
+  _applyDomDraftPatch(patch);
+}
+
 /**
  * useDraft(key, initial) — persists [value, setValue] under
  * `tada:moment:<slug>:<key>`. Edits survive reloads and re-executions.
@@ -216,10 +351,17 @@ function useDraft(key, initial) {
   var value = pair[0];
   var setValue = pair[1];
   var setter = useCallback(function(next) {
-    var resolved = typeof next === "function" ? next(value) : next;
-    setValue(resolved);
-    _writeStored(key, resolved);
-  }, [key, value]);
+    setValue(function(prev) {
+      var resolved = typeof next === "function" ? next(prev) : next;
+      _writeStored(key, resolved);
+      _persistDraftPatch(key, resolved);
+      return resolved;
+    });
+  }, [key]);
+  useEffect(function() {
+    _registerDraft(key, value, setter);
+    return function() { _unregisterDraft(key, setter); };
+  }, [key, value, setter]);
   return [value, setter];
 }
 
@@ -257,6 +399,30 @@ var _pendingActions = {};
 window.addEventListener("message", function(event) {
   var d = event.data;
   if (!d || d.source !== "tada-host") return;
+  if (d.type === "getDraftSnapshot" && d.nonce) {
+    try {
+      window.parent.postMessage(
+        { source: "tada-moment", nonce: d.nonce, ok: true, payload: { drafts: _draftSnapshot() } },
+        "*"
+      );
+    } catch (e) {}
+    return;
+  }
+  if (d.type === "applyDraftPatch" && d.nonce) {
+    try {
+      _applyDraftPatch(d.payload && d.payload.patch);
+      window.parent.postMessage(
+        { source: "tada-moment", nonce: d.nonce, ok: true },
+        "*"
+      );
+    } catch (e) {
+      window.parent.postMessage(
+        { source: "tada-moment", nonce: d.nonce, ok: false, error: String(e && e.message || e) },
+        "*"
+      );
+    }
+    return;
+  }
   var pending = _pendingActions[d.nonce];
   if (!pending) return;
   delete _pendingActions[d.nonce];
@@ -297,6 +463,39 @@ var Actions = Object.freeze({
   downloadFile: function(payload) { return _dispatch("downloadFile", payload); },
   copyToClipboard: function(text) { return _dispatch("copyToClipboard", { text: text }); },
 });
+
+document.addEventListener("input", function(event) {
+  var el = event.target;
+  if (!el || !el.matches || !el.matches("input, textarea, select")) return;
+  var key = _domDraftKey(el);
+  if (!key) return;
+  var value = _readDomControlValue(el);
+  _writeStored(key, value);
+  _persistDraftPatch(key, value);
+}, true);
+
+document.addEventListener("change", function(event) {
+  var el = event.target;
+  if (!el || !el.matches || !el.matches("input, textarea, select")) return;
+  var key = _domDraftKey(el);
+  if (!key) return;
+  var value = _readDomControlValue(el);
+  _writeStored(key, value);
+  _persistDraftPatch(key, value);
+}, true);
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", _scheduleDomRestore);
+} else {
+  _scheduleDomRestore();
+}
+
+try {
+  new MutationObserver(_scheduleDomRestore).observe(document.documentElement, {
+    childList: true,
+    subtree: true,
+  });
+} catch (e) {}
 
 // ── Export ───────────────────────────────────────────────
 

@@ -110,13 +110,17 @@ class _FakeExecuteAgent:
         self.messages.append(messages)
         prompt = messages[0]["content"]
         self.test_case.assertIn("/output", prompt)
-        self.test_case.assertIn("Start with an `index.md` page", prompt)
-        self.test_case.assertIn("Use markdown links liberally", prompt)
-        self.test_case.assertIn("Do not build a website or app", prompt)
+        self.test_case.assertIn("self-contained mini-web-app", prompt)
+        self.test_case.assertIn("index.html", prompt)
+        self.test_case.assertIn("app.js", prompt)
+        self.test_case.assertIn("components.js", prompt)
         output_pages_dir = self.output_dir / "output"
         output_pages_dir.mkdir(parents=True)
-        (output_pages_dir / "evidence.md").write_text("# Evidence\n\nA cited [source](https://example.com).\n")
-        (output_pages_dir / "synthesis.md").write_text("# Synthesis\n\nUseful researched findings.\n")
+        (output_pages_dir / "index.html").write_text("<!doctype html><div id=\"root\"></div>\n")
+        (output_pages_dir / "styles.css").write_text("body { font-family: sans-serif; }\n")
+        (output_pages_dir / "app.js").write_text("const DATA = { title: 'Strategy Brief' };\n")
+        (output_pages_dir / "base.css").write_text(":root { color: #2c3a28; }\n")
+        (output_pages_dir / "components.js").write_text("window.PN = window.PN || {};\n")
         return "research complete"
 
 
@@ -315,29 +319,29 @@ class MomentsPipelineTests(unittest.TestCase):
             result_dir = Path(d)
             output_pages = result_dir / "output"
             output_pages.mkdir()
-            (output_pages / "z-notes.md").write_text("# Zebra Notes\n\nBody\n")
-            (output_pages / "overview.md").write_text("---\ntitle: Brief Overview\n---\n\nBody\n")
-            (output_pages / "index.md").write_text("# Start Here\n\nBody\n")
+            (output_pages / "z-notes.html").write_text("<h1>Zebra Notes</h1>\n")
+            (output_pages / "overview.html").write_text("<h1>Overview</h1>\n")
+            (output_pages / "index.html").write_text("<h1>Start Here</h1>\n")
 
             pages = moments_routes._list_output_pages(result_dir)
 
-            self.assertEqual([p.name for p in pages], ["index.md", "overview.md", "z-notes.md"])
-            self.assertEqual(moments_routes._page_meta(pages[1], output_pages)["title"], "Brief Overview")
+            self.assertEqual([p.name for p in pages], ["index.html", "overview.html", "z-notes.html"])
+            self.assertEqual(moments_routes._page_meta(pages[1], output_pages)["title"], "Overview")
 
     def test_resolve_output_page_rejects_traversal(self):
         with tempfile.TemporaryDirectory() as d:
             tada = Path(d) / "logs-tada"
             output_pages = tada / "results" / "brief" / "output"
             output_pages.mkdir(parents=True)
-            safe = output_pages / "safe.md"
-            safe.write_text("# Safe\n")
-            (tada / "results" / "brief" / "outside.md").write_text("# Outside\n")
+            safe = output_pages / "safe.html"
+            safe.write_text("<h1>Safe</h1>\n")
+            (tada / "results" / "brief" / "outside.html").write_text("<h1>Outside</h1>\n")
 
-            self.assertEqual(moments_routes._resolve_output_page(tada, "brief", "safe.md"), safe.resolve())
-            self.assertIsNone(moments_routes._resolve_output_page(tada, "brief", "../outside.md"))
+            self.assertEqual(moments_routes._resolve_output_page(tada, "brief", "safe.html"), safe.resolve())
+            self.assertIsNone(moments_routes._resolve_output_page(tada, "brief", "../outside.html"))
             self.assertIsNone(moments_routes._resolve_output_page(tada, "brief", "/etc/passwd"))
 
-    def test_list_results_includes_markdown_backed_results(self):
+    def test_list_results_skips_markdown_backed_results(self):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)
             tada = root / "logs-tada"
@@ -376,11 +380,9 @@ class MomentsPipelineTests(unittest.TestCase):
 
             results = asyncio.run(moments_routes.list_results(request))
 
-            self.assertEqual(len(results), 1)
-            self.assertEqual(results[0]["slug"], "strategy-brief")
-            self.assertEqual(results[0]["page_count"], 2)
+            self.assertEqual(results, [])
 
-    def test_execute_generates_markdown_only_result(self):
+    def test_execute_generates_html_app_result(self):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)
             logs = root / "logs"
@@ -412,15 +414,14 @@ class MomentsPipelineTests(unittest.TestCase):
                 success = execute.run(str(task_path), str(output_dir), str(logs), model="fake")
 
             self.assertTrue(success)
-            self.assertGreaterEqual(len(list((output_dir / "output").glob("*.md"))), 2)
-            index = output_dir / "output" / "index.md"
+            index = output_dir / "output" / "index.html"
             self.assertTrue(index.exists())
-            self.assertIn("[Evidence](evidence.md)", index.read_text())
+            self.assertTrue((output_dir / "output" / "styles.css").exists())
+            self.assertTrue((output_dir / "output" / "app.js").exists())
+            self.assertTrue((output_dir / "output" / "base.css").exists())
+            self.assertTrue((output_dir / "output" / "components.js").exists())
             self.assertTrue((output_dir / "meta.json").exists())
             self.assertFalse((output_dir / "index.html").exists())
-            self.assertFalse((output_dir / "styles.css").exists())
-            self.assertFalse((output_dir / "app.js").exists())
-            self.assertFalse((output_dir / "templates").exists())
             self.assertEqual(len(research_agent.messages), 1)
 
     def test_execute_fails_when_research_missing(self):
@@ -452,7 +453,7 @@ class MomentsPipelineTests(unittest.TestCase):
             self.assertFalse(success)
             self.assertFalse(output_dir.exists())
             self.assertEqual(len(research_agent.messages), 2)
-            self.assertIn("output folder is not ready", research_agent.messages[1][0]["content"])
+            self.assertIn("mini-web-app is not ready", research_agent.messages[1][0]["content"])
 
     def test_discover_and_promote_with_fake_agents(self):
         with tempfile.TemporaryDirectory() as d:
@@ -681,6 +682,104 @@ class MomentsPipelineTests(unittest.TestCase):
             self.assertFalse((root / "logs-tada" / "research" / "second.md").exists())
             self.assertIn("Ranked 3 of 3 candidates. Promoted top 2", result)
 
+    def test_promotion_always_promotes_existing_moment_updates(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            logs = root / "logs"
+            logs.mkdir()
+            tada = root / "logs-tada"
+            accepted_dir = tada / "research"
+            accepted_dir.mkdir(parents=True)
+            (accepted_dir / "paper-digest.md").write_text(
+                "---\n"
+                "title: Paper Digest\n"
+                "description: Track relevant papers.\n"
+                "cadence: scheduled\n"
+                "schedule: daily at 8am\n"
+                "confidence: 0.80\n"
+                "usefulness: 8\n"
+                "---\n\nExisting body\n"
+            )
+            (tada / "results" / "paper-digest").mkdir(parents=True)
+            update = validate_candidate(_candidate(
+                id="paper-digest-update",
+                slug="paper-digest",
+                title="Updated Paper Digest",
+                specific_instructions="Add the new reviewer-request thread to the existing digest.",
+            ))
+            new = validate_candidate(_candidate(id="new-brief", slug="new-brief", title="New Brief"))
+            write_candidates_jsonl(tada, [update, new])
+            structured = _FakeStructuredCompletion(
+                "```json\n"
+                + json.dumps({
+                    "ranked": [{"id": "new-brief", "score": 10, "reason": "best new moment"}],
+                    "rejected": [{"id": "paper-digest-update", "reason": "ranker rejected update"}],
+                })
+                + "\n```"
+            )
+
+            with patch.object(promote, "structured_completion", side_effect=structured):
+                result = promote.run(str(logs), model="fake", n=1)
+
+            self.assertTrue((accepted_dir / "paper-digest.md").exists())
+            self.assertIn("Add the new reviewer-request", (accepted_dir / "paper-digest.md").read_text())
+            self.assertTrue((tada / "research" / "new-brief.md").exists())
+            self.assertIn("Always promoted 1 existing-moment update", result)
+
+    def test_promotion_renormalizes_topic_prefixed_slug_to_existing(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            logs = root / "logs"
+            logs.mkdir()
+            tada = root / "logs-tada"
+            accepted_dir = tada / "research"
+            accepted_dir.mkdir(parents=True)
+            (accepted_dir / "paper-digest.md").write_text(
+                "---\n"
+                "title: Paper Digest\n"
+                "description: Track relevant papers.\n"
+                "cadence: scheduled\n"
+                "schedule: daily at 8am\n"
+                "confidence: 0.80\n"
+                "usefulness: 8\n"
+                "---\n\nExisting body\n"
+            )
+            (tada / "results" / "paper-digest").mkdir(parents=True)
+            # Model emitted a slug that prefixed the topic onto the real slug —
+            # the kind of mistake we're trying to rescue.
+            write_candidates_jsonl(tada, [
+                validate_candidate(
+                    _candidate(
+                        id="research-paper-digest-refresh",
+                        slug="research-paper-digest",
+                        topic="research",
+                        title="Paper Digest Refresh",
+                        specific_instructions="Refresh the digest with the latest reviewer thread.",
+                    )
+                )
+            ])
+            structured = _FakeStructuredCompletion(
+                "```json\n"
+                + json.dumps({
+                    "ranked": [{"id": "research-paper-digest-refresh", "score": 9, "reason": "useful refresh"}],
+                    "rejected": [],
+                })
+                + "\n```"
+            )
+
+            with patch.object(promote, "structured_completion", side_effect=structured):
+                result = promote.run(str(logs), model="fake")
+
+            # The renormalized candidate should overwrite the existing .md, not
+            # create a new prefixed sibling.
+            self.assertTrue((accepted_dir / "paper-digest.md").exists())
+            self.assertFalse((accepted_dir / "research-paper-digest.md").exists())
+            self.assertIn(
+                "Refresh the digest with the latest reviewer thread.",
+                (accepted_dir / "paper-digest.md").read_text(),
+            )
+            self.assertIn("Renormalized 1 topic-prefixed candidate", result)
+
     def test_accepted_summary_marks_completed_once_outputs(self):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)
@@ -702,7 +801,9 @@ class MomentsPipelineTests(unittest.TestCase):
 
             summary = summarize_tada_tasks(tada)
 
-            self.assertIn("research/brief", summary)
+            self.assertIn("slug: `brief`", summary)
+            self.assertIn("topic: research", summary)
+            self.assertNotIn("research/brief", summary)
             self.assertIn("one-shot output already generated", summary)
 
 

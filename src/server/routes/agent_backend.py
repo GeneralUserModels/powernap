@@ -12,6 +12,7 @@ from pydantic import BaseModel
 from agent.cli_backends.install import (
     BACKENDS,
     detect_cli,
+    detect_npm,
     install_cli,
     login_cli,
     logout_cli,
@@ -49,6 +50,7 @@ async def get_status(request: Request):
     return {
         "selected": getattr(cfg, "agent_backend", "gemini"),
         "cli_bin_extra_path": extra,
+        "npm": detect_npm().to_dict(),
         "backends": {
             backend: detect_cli(backend, extra_path=extra).to_dict()
             for backend in BACKENDS

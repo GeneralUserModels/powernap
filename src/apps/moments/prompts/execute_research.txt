@@ -11,19 +11,37 @@ The artifact must be:
 - **Pre-filled with the actual content.** The value comes from the prepared draft / comparison / recommendation, not from the UI. Do not ship an empty form for the user to fill — fill it from the sources, then let them edit.
 - **Preparation-only on outbound actions.** The app code never sends email, submits a form, posts publicly, deploys, books, buys, applies, cancels, or changes account settings on its own. Any outbound effect must go through `PN.Actions.*` and happen only after an explicit user click on a visible button.
 
+## Decide the Artifact Shape First
+
+Before picking a template, decide what the user is actually doing in this app. Most tadas are not dashboards. Match the candidate's `desired_artifact` to one of these shapes:
+
+- **Email / message draft** → editable subject + body fields backed by `PN.useDraft`; recipient/context chips at the top; a "Send" button that calls `PN.Actions.sendEmail({{to, subject, body}})`; a "Copy" fallback via `PN.Actions.copyToClipboard`.
+- **Paper / document review** → side-by-side: source bullets on the left, editable review body on the right; per-comment severity selectors; a "Copy review" button.
+- **Briefing for a meeting / new person** → collapsible person/topic sections; a "questions to ask" editable list; a per-topic "ready" checkbox.
+- **Comparison / decision** → table with criteria rows, options as columns; pre-filled recommendation banner at the top; editable weights so the user can re-rank by changing what they care about.
+- **Trip / itinerary** → editable day-by-day plan; per-day notes textarea (`PN.useDraft`); booked-vs-pending checkboxes (`PN.useChecklist`); "open in maps" via `PN.Actions.openExternal`.
+- **Recurring digest / research feed** → today's content prominently; a small "what's new since last run" diff; editable "follow-ups" carry-over textarea.
+- **Checklist / runbook** (only when the artifact really is a list of user actions) → `PN.useChecklist` for state; group sections with `PN.GlassCard`.
+- **Long-form recap / advisory / spec** → linear sections, optional timeline, optional action items.
+- **Status overview with real metrics** → KPI pills + filterable cards. Only when there are genuine numbers to track (counts, dollar amounts, deadlines, completion %).
+
 ## Pick a Starter Template
 
-Templates live at `{templates_dir}/`. Pick the best match for the candidate's `desired_artifact`:
+Templates live at `{templates_dir}/`. **Default to `blank/`** unless the artifact's shape obviously maps to one of the specialized templates:
 
-| Template | When to pick |
+| Template | Pick only when |
 | --- | --- |
-| `dashboard/` | metrics, KPIs, status overview |
-| `table/` | sortable/filterable rows of similar items |
-| `feed/` | card-based list (briefings, news, threads) |
-| `report/` | long-form structured content with sections |
-| `blank/` | anything else — custom layout |
+| `blank/` | **default.** Email drafts, document reviews, briefings, decision matrices, custom layouts, anything single-purpose. |
+| `report/` | long-form recap / advisory / spec with linear sections (no live data, no filtering). |
+| `feed/` | tabbed stream of similar items the user browses (news, alerts, papers). |
+| `table/` | dense rows of structured data the user sorts/filters/scans. |
+| `dashboard/` | genuine status overview with KPIs and filterable items. Most tadas are NOT this. |
 
-Read the template's `README.md` for its DATA schema, then read `{templates_dir}/shared/README.md` for the full PN.* component API.
+**Don't dashboard-ify single-artifact moments.** An email draft, a paper review, a meeting brief, a single decision, a spec doc, a research summary, a runbook, a personal letter — none of these have KPIs. Do not add a `StatRow` of fake metrics ("3 sections", "5 items", "12 days") just because the dashboard template has one. If the user wouldn't glance at the number to make a decision, it's not a KPI.
+
+**The `stats:` field in non-dashboard template schemas is optional.** Skip it unless the artifact actually has counts the user cares about.
+
+Read the chosen template's `README.md` for its DATA schema, then read `{templates_dir}/shared/README.md` for the full PN.* component API.
 
 To build the output:
 1. Copy `{templates_dir}/<chosen>/index.html`, `app.js`, `styles.css` into `{output_dir}/`.
@@ -57,18 +75,6 @@ To build the output:
 **Any `className` you put in `app.js` that is NOT one of the above MUST have a corresponding rule in `styles.css`.** Don't ship `className: "ryan-card"` or `className: "input-card"` unless `styles.css` defines `.ryan-card` / `.input-card`. The dashboard template's `styles.css` is a *starter file*, not a complete library — extend it. A div with an undefined class is a blank unstyled rectangle on the screen.
 
 **Long text wraps automatically.** `<pre>`, `<code>`, `<p>`, `<li>`, `<textarea>` all wrap inside their containers via `base.css`. Do not add `style={{whiteSpace: ...}}` overrides. If you put a long copy-block in a `<pre>` it will wrap to the iframe width on its own.
-
-## Interactive Patterns by Artifact Kind
-
-Match the patterns to the candidate's `desired_artifact`:
-
-- **Trip / itinerary** → editable day-by-day plan; per-day notes textarea (`PN.useDraft`); booked-vs-pending checkboxes (`PN.useChecklist`); "open in maps" via `PN.Actions.openExternal`.
-- **Email / message draft** → editable subject + body fields backed by `PN.useDraft`; recipient/context chips at the top; a "Send" button that calls `PN.Actions.sendEmail({{to, subject, body}})`; a "Copy" fallback via `PN.Actions.copyToClipboard`.
-- **Paper / document review** → side-by-side: source bullets on the left, editable review body on the right; per-comment severity selectors; a "Copy review" button.
-- **Comparison / decision** → table with criteria rows, options as columns; pre-filled recommendation banner at the top; editable weights so the user can re-rank by changing what they care about.
-- **Briefing for a meeting / new person** → collapsible person/topic sections; a "questions to ask" editable list; a per-topic "ready" checkbox.
-- **Recurring digest** → today's content prominently; a small "what's new since last run" diff; editable "follow-ups" carry-over textarea.
-- **Checklist / runbook** (only when the artifact really is a list of user actions) → `PN.useChecklist` for state; group sections with `PN.GlassCard`.
 
 ## PN.* Component & Action API
 

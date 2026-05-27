@@ -55,6 +55,8 @@ class ServerState:
 
     # Moment feedback — one ChatSession per slug, supports concurrent sessions
     feedback_sessions: dict[str, object] = field(default_factory=dict)
+    # Direct moment app editor — one EditorSession per slug.
+    editor_sessions: dict[str, object] = field(default_factory=dict)
     
     cost_logger_task: asyncio.Task | None = None
 

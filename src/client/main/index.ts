@@ -17,6 +17,7 @@ import * as sse from "./sse";
 import { isDev, getDataDir, getPythonPath, getLogDir, getPythonSrcDir, getGoogleTokenPath, getOutlookTokenPath, getPlaywrightBrowsersDir } from "./paths";
 import * as bootstrap from "./features/bootstrap";
 import { runOnboarding, getOnboardingWindow } from "./features/onboarding";
+import { removeLegacyMarkdownTadas } from "./features/tadaMigrations";
 import { setupConnectorIpc } from "./connectors/manager";
 import { connectorPermissions } from "./connectors/permissions";
 import { initUpdateChecker, checkForUpdates, installUpdate } from "./features/updater";
@@ -123,6 +124,8 @@ const MODEL_CONFIG_KEYS = [
   "seeker_model",
 ];
 
+const LEGACY_MARKDOWN_TADAS_MIGRATION = "legacy_markdown_tadas_removed_v1";
+
 function replaceLegacyModelValues(cfg: Record<string, unknown>): boolean {
   let changed = false;
 
@@ -138,6 +141,43 @@ function replaceLegacyModelValues(cfg: Record<string, unknown>): boolean {
   }
 
   return changed;
+}
+
+function getMigrationRecord(cfg: Record<string, unknown>): Record<string, unknown> {
+  if (!isPlainObject(cfg._migrations)) {
+    cfg._migrations = {};
+  }
+  return cfg._migrations as Record<string, unknown>;
+}
+
+function configuredTadaDir(cfg: Record<string, unknown>): string {
+  const configured = typeof cfg.tada_dir === "string" ? cfg.tada_dir.trim() : "";
+  return configured || path.join(getDataDir(), "logs-tada");
+}
+
+function runLegacyMarkdownTadasMigration(cfg: Record<string, unknown>, currentVersion: string): boolean {
+  if (isDev()) return false;
+  const migrations = getMigrationRecord(cfg);
+  if (migrations[LEGACY_MARKDOWN_TADAS_MIGRATION]) return false;
+
+  const tadaDir = configuredTadaDir(cfg);
+  const stats = removeLegacyMarkdownTadas(tadaDir);
+  migrations[LEGACY_MARKDOWN_TADAS_MIGRATION] = {
+    version: currentVersion,
+    completed_at: new Date().toISOString(),
+    tada_dir: tadaDir,
+    ...stats,
+  };
+  console.log(
+    `[migration] legacy markdown tadas: scanned=${stats.scannedResultDirs} ` +
+    `results_deleted=${stats.legacyResultDirsDeleted} task_files_deleted=${stats.taskFilesDeleted} ` +
+    `state_entries_removed=${stats.stateEntriesRemoved} run_rows_removed=${stats.runHistoryRowsRemoved} ` +
+    `errors=${stats.errors.length}`,
+  );
+  if (stats.errors.length > 0) {
+    console.log(`[migration] legacy markdown tadas errors: ${stats.errors.join("; ")}`);
+  }
+  return true;
 }
 
 function ensureConfigDefaults(): void {
@@ -168,6 +208,7 @@ function ensureConfigDefaults(): void {
   ];
   const currentVersion = app.getVersion();
   if (cfg._app_version !== currentVersion) {
+    if (runLegacyMarkdownTadasMigration(cfg, currentVersion)) changed = true;
     for (const key of DEPLOYMENT_KEYS) {
       if (key in defaults) {
         cfg[key] = structuredClone(defaults[key]);

@@ -137,8 +137,9 @@ def summarize_tada_tasks(tada_dir: Path) -> str:
             status_parts.append(f"user feedback: thumbs {state['thumbs']}")
         status = " | ".join(status_parts) or "status unknown"
         lines.append(
-            f"- **{topic}/{slug}** — {title}\n"
-            f"  {description}\n"
+            f"- slug: `{slug}`  (topic: {topic})\n"
+            f"  title: {title}\n"
+            f"  description: {description}\n"
             f"  cadence: {cadence} | schedule: {schedule} | trigger: {trigger}\n"
             f"  status: {status}"
         )

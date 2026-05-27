@@ -29,6 +29,8 @@ BINARY_NAME = {
     "claude_code": "claude",
 }
 
+NODE_DOWNLOAD_URL = "https://nodejs.org/en/download"
+
 # Each CLI ships a probe subcommand we can call to read auth status reliably
 # (much more accurate than guessing from leftover ~/.codex / ~/.claude state,
 # since both tools keep config files around after logout).
@@ -70,16 +72,56 @@ class BackendStatus:
         }
 
 
+@dataclass
+class NpmStatus:
+    available: bool
+    version: str | None
+    bin: str | None
+    install_url: str
+
+    def to_dict(self) -> dict:
+        return {
+            "available": self.available,
+            "version": self.version,
+            "bin": self.bin,
+            "install_url": self.install_url,
+        }
+
+
+def _common_bin_dirs() -> list[str]:
+    home = Path.home()
+    dirs = [
+        "/opt/homebrew/bin",
+        "/usr/local/bin",
+        str(home / ".local" / "bin"),
+        str(home / ".volta" / "bin"),
+        str(home / ".asdf" / "shims"),
+    ]
+    nvm_root = home / ".nvm" / "versions" / "node"
+    if nvm_root.is_dir():
+        dirs.extend(str(p / "bin") for p in sorted(nvm_root.glob("v*"), reverse=True))
+    return dirs
+
+
 def _path_with_extra(extra: str | None) -> str:
+    parts: list[str] = []
+    if extra:
+        parts.append(extra)
+    parts.extend(_common_bin_dirs())
     base = os.environ.get("PATH", "")
-    if not extra:
-        return base
-    return f"{extra}:{base}" if base else extra
+    if base:
+        parts.append(base)
+    deduped = list(dict.fromkeys(p for p in parts if p))
+    return os.pathsep.join(deduped)
+
+
+def _which(name: str, extra_path: str | None = None) -> str | None:
+    return shutil.which(name, path=_path_with_extra(extra_path))
 
 
 def _bin_path(backend: str, extra_path: str | None = None) -> str | None:
     name = BINARY_NAME[backend]
-    return shutil.which(name, path=_path_with_extra(extra_path))
+    return _which(name, extra_path)
 
 
 def _probe_version(bin_path: str) -> str | None:
@@ -155,6 +197,17 @@ def detect_cli(backend: str, *, extra_path: str | None = None) -> BackendStatus:
     )
 
 
+def detect_npm() -> NpmStatus:
+    npm_bin = _which("npm")
+    version = _probe_version(npm_bin) if npm_bin else None
+    return NpmStatus(
+        available=bool(npm_bin),
+        version=version,
+        bin=npm_bin,
+        install_url=NODE_DOWNLOAD_URL,
+    )
+
+
 @dataclass
 class InstallResult:
     ok: bool
@@ -164,10 +217,10 @@ class InstallResult:
     reason: str | None = None
 
 
-def _npm_prefix() -> Path | None:
+def _npm_prefix(npm_bin: str) -> Path | None:
     try:
         proc = subprocess.run(
-            ["npm", "config", "get", "prefix"],
+            [npm_bin, "config", "get", "prefix"],
             capture_output=True,
             text=True,
             timeout=10,
@@ -194,7 +247,8 @@ def install_cli(backend: str, *, log_dir: Path) -> InstallResult:
     if backend not in BACKENDS:
         raise ValueError(f"unknown backend {backend!r}")
 
-    if shutil.which("npm") is None:
+    npm_bin = _which("npm")
+    if npm_bin is None:
         log_path = log_dir / f"install_{backend}_{int(time.time())}.log"
         log_dir.mkdir(parents=True, exist_ok=True)
         log_path.write_text("npm not found on PATH; install Node.js first.\n")
@@ -206,21 +260,21 @@ def install_cli(backend: str, *, log_dir: Path) -> InstallResult:
             reason="npm_not_found",
         )
 
-    pkg = NPM_PACKAGE[backend]
+    pkg = f"{NPM_PACKAGE[backend]}@latest"
     use_local_prefix = False
-    prefix = _npm_prefix()
+    prefix = _npm_prefix(npm_bin)
     if prefix is None or not _is_writable(prefix):
         use_local_prefix = True
 
     log_dir.mkdir(parents=True, exist_ok=True)
     log_path = log_dir / f"install_{backend}_{int(time.time())}.log"
 
-    cmd = ["npm", "install", "-g", pkg]
+    cmd = [npm_bin, "install", "-g", pkg]
     extra_path: str | None = None
     env = dict(os.environ)
     if use_local_prefix:
         local_prefix = Path.home() / ".local"
-        cmd = ["npm", "install", "-g", "--prefix", str(local_prefix), pkg]
+        cmd = [npm_bin, "install", "-g", "--prefix", str(local_prefix), pkg]
         extra_path = str(local_prefix / "bin")
         env["PATH"] = f"{extra_path}:{env.get('PATH', '')}"
 
