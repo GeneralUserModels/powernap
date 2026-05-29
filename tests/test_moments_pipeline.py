@@ -114,6 +114,9 @@ class _FakeExecuteAgent:
         self.test_case.assertIn("index.html", prompt)
         self.test_case.assertIn("app.js", prompt)
         self.test_case.assertIn("components.js", prompt)
+        self.test_case.assertIn("Control center", prompt)
+        self.test_case.assertIn("Transfer surface", prompt)
+        self.test_case.assertIn("Copy/export-first for external workflows", prompt)
         output_pages_dir = self.output_dir / "output"
         output_pages_dir.mkdir(parents=True)
         (output_pages_dir / "index.html").write_text("<!doctype html><div id=\"root\"></div>\n")
@@ -479,6 +482,9 @@ class MomentsPipelineTests(unittest.TestCase):
             self.assertIn("Activity Chunk", discover_prompt)
             self.assertIn("current implementation activity is not enough evidence", discover_prompt)
             self.assertIn("independent of the current edits", discover_prompt)
+            self.assertIn("Control center", discover_prompt)
+            self.assertIn("Transfer surface", discover_prompt)
+            self.assertIn("copy/export", discover_prompt)
             candidate_files = _candidate_files(root)
             self.assertEqual(len(candidate_files), 1)
             self.assertTrue(_tada_run_checkpoint(root).exists())
@@ -494,6 +500,8 @@ class MomentsPipelineTests(unittest.TestCase):
             self.assertIn("Drop completed work", promote_prompt)
             self.assertIn("explicit confirmation", promote_prompt)
             self.assertIn("Do not call tools", promote_prompt)
+            self.assertIn("control center", promote_prompt)
+            self.assertIn("transfer surface", promote_prompt)
 
     def test_invalid_discovery_keeps_seed_checkpoint(self):
         with tempfile.TemporaryDirectory() as d:

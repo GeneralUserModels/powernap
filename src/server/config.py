@@ -59,8 +59,6 @@ _PERSISTED_FIELDS = SETTINGS_API_FIELDS | {
     "subagent_model", "subagent_api_key",
     "agent_backend",
     "codex_bin", "claude_bin", "cli_bin_extra_path",
-    "codex_model", "codex_reasoning_effort",
-    "claude_model", "claude_effort",
     "feature_flags",
 }
 
@@ -168,13 +166,6 @@ class ServerConfig(BaseModel):
     # PATH segment appended for CLI subprocesses so binaries installed to a
     # non-default npm prefix (e.g. ~/.local/bin) remain discoverable after restart.
     cli_bin_extra_path: str = ""
-    # CLI model + effort knobs. Not surfaced in the UI — power users can edit
-    # tada-config.json directly to override.
-    codex_model: str = "gpt-5.5"
-    codex_reasoning_effort: str = "high"
-    claude_model: str = "claude-sonnet-4-6"
-    claude_effort: str = "medium"
-
     # Logging
     log_dir: str = Field(default_factory=lambda: os.getenv("TADA_LOG_DIR", "./logs"))
     log_to_wandb: bool = Field(default_factory=lambda: os.getenv("TADA_LOG_TO_WANDB", "") == "1")

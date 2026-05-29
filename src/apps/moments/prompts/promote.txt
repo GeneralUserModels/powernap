@@ -17,7 +17,7 @@ For each candidate:
 5. **Drop near-duplicates with a different slug.** If a draft targets the same entity / workflow / artifact as an accepted moment but used a new slug, reject it unless it is meaningfully distinct.
 6. **Drop inferred-completed actions.** Submissions, sends, purchases, deletions, approvals, cancellations are not "completed" because a button was visible or clicked — only because the candidate's evidence mentions explicit confirmation (success text, receipt, status change, post-action email, etc.). When in doubt, treat as still pending.
 7. **Drop engineering roadmap / migration / test-plan candidates** unless the candidate's evidence names independent signals beyond the visible edits (a deployment decision, handoff, review, deadline, integration point, or unresolved design choice). Do not let active implementation work survive by being reframed as a long-term architecture note.
-8. **Drop action-shaped candidates.** If `desired_artifact` reads as an action the user must take (*"send the email"*, *"submit the form"*, *"book the venue"*), reject it. The artifact must be the **prepared state** the user reviews before acting — an editable draft, a ranked comparison, a populated form — not the action itself.
+8. **Drop action-shaped candidates.** If `desired_artifact` reads as an action the user must take (*"send the email"*, *"submit the form"*, *"book the venue"*), reject it. The artifact must be the **prepared state** the user reviews before acting — an editable draft, a ranked comparison, a populated form, or structured content ready to copy/export into the right external app — not the action itself.
 9. **Drop content-as-checklist when a narrower draft would do.** Down-rank or reject candidates whose `desired_artifact` is `*_checklist`, `*_runbook`, `*_audit`, `*_summary` when the real need is a single concrete draft (the email itself, the comparison itself, the populated form itself).
 10. **Drop vague, generic, or weakly-evidenced candidates** — broad productivity coaching, life summaries without a clear use, passive recaps with no next action, trivial tasks a human could do in a few minutes, or tasks requiring data unlikely to be available.
 11. **Drop over-broad bridges.** Reject candidates that connect separate evidence clusters unless the candidate's evidence itself names the same project, person, deadline, artifact, decision, or follow-up. Broad thematic overlap or time-proximity is not enough.
@@ -38,11 +38,11 @@ Keep lower-priority-but-still-viable candidates in `ranked`; Python applies the 
 
 ## Moment Quality Bar
 
-Prefer tasks that amplify the user — deep information foraging, preparation, comparison, exploratory experimentation, and extra-mile work the user wouldn't do themselves. Strong moments extend one clear current trajectory, save time, reduce missed information, clarify a decision, make recurring work easier, or produce a concrete editable artifact the user can act on.
+Prefer tasks that amplify the user — deep information foraging, preparation, comparison, exploratory experimentation, and extra-mile work the user wouldn't do themselves. Strong moments extend one clear current trajectory, save time, reduce missed information, clarify a decision, make recurring work easier, produce a concrete editable artifact the user can act on, or prepare structured content the user can paste/export into the app where the work should happen.
 
 ## Agent Capabilities For Executor (context only)
 
-Tasks are run by an execution agent that produces a self-contained mini-web-app: an `index.html` + React app the user opens, edits, refines, and acts from. Pre-filled drafts, decision matrices, itineraries, briefings, comparisons, and review surfaces. User-approved outbound actions through built-in helpers; the executor cannot send/submit/post on its own.
+Tasks are run by an execution agent that produces a self-contained mini-web-app: an `index.html` + React app the user opens, edits, refines, and acts from. The app should either be the control center where the user manages the topic, or a transfer surface that prepares copyable/exportable content for a better external execution app such as a spreadsheet, document editor, project tracker, calendar, design tool, or codebase. Pre-filled drafts, decision matrices, itineraries, briefings, comparisons, review surfaces, and direct-paste copy/export payloads are all valid. User-approved outbound actions through built-in helpers; the executor cannot send/submit/post on its own.
 
 ## Moment Semantics
 

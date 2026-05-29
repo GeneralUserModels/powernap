@@ -8,12 +8,19 @@ from __future__ import annotations
 import json
 import shutil
 import uuid
+from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
 import litellm
 
+from agent.cli_backends import (
+    HARDCODED_CLAUDE_EFFORT,
+    HARDCODED_CODEX_REASONING_EFFORT,
+    load_cli_config,
+)
+from agent.cli_backends.stages import run_stage_via_cli
 from agent.builder import _ensure_sandbox_async
 from agent.tools import (
     ALL_TOOLS,
@@ -40,11 +47,13 @@ from chat import ChatAgent
 from server.config import DEFAULT_AGENT_MODEL
 from shared.model_catalog import default_model as catalog_default_model, model_values
 
-# Effort caps the agent's *output* tokens (its generated text + tool-call args).
+# Effort caps the built-in agent's *output* tokens (its generated text + tool-call args).
 # This is a better proxy than turns for "how much agent work this response can
 # do": a single turn can read a 50KB file or write a 10KB file, so turns
 # under-count work; output tokens scale with what the agent actually produces.
 EFFORT_TO_MAX_TOKENS = {"low": 5_000, "medium": 20_000, "high": 60_000}
+CODEX_EFFORTS = ("minimal", "low", "medium", "high", "xhigh")
+CLAUDE_EFFORTS = ("low", "medium", "high", "xhigh", "max")
 DEFAULT_EFFORT = "medium"
 
 # Hard safety cap on agent loop iterations. Tokens are the primary budget;
@@ -87,7 +96,45 @@ def resolve_api_key(config) -> str | None:
     return config.agent_api_key or config.resolve_api_key("agent_api_key")
 
 
+def backend_for_config(config) -> str:
+    cli_config = load_cli_config(config)
+    return cli_config.backend if cli_config is not None else "gemini"
+
+
+def effort_options(config) -> list[str]:
+    backend = backend_for_config(config)
+    if backend == "codex":
+        return list(CODEX_EFFORTS)
+    if backend == "claude_code":
+        return list(CLAUDE_EFFORTS)
+    return list(EFFORT_TO_MAX_TOKENS.keys())
+
+
+def effort_max_tokens(config) -> dict[str, int]:
+    return dict(EFFORT_TO_MAX_TOKENS) if backend_for_config(config) == "gemini" else {}
+
+
+def default_effort(config) -> str:
+    backend = backend_for_config(config)
+    if backend == "codex":
+        return HARDCODED_CODEX_REASONING_EFFORT
+    if backend == "claude_code":
+        return HARDCODED_CLAUDE_EFFORT
+    return DEFAULT_EFFORT
+
+
+def normalize_effort(config, effort: str | None) -> str:
+    return effort if effort in effort_options(config) else default_effort(config)
+
+
 def default_model(config) -> str:
+    cli_config = load_cli_config(config)
+    if cli_config is not None:
+        if cli_config.backend == "codex":
+            return cli_config.codex_model
+        if cli_config.backend == "claude_code":
+            return cli_config.claude_model
+
     configured = getattr(config, "agent_model", "") or DEFAULT_MODEL
     return configured if configured in AVAILABLE_MODELS else DEFAULT_MODEL
 
@@ -104,6 +151,11 @@ def list_sessions(state) -> list[dict]:
         if not meta_path.exists():
             continue
         meta = json.loads(meta_path.read_text())
+        meta = {
+            **meta,
+            "model": default_model(state.config),
+            "effort": normalize_effort(state.config, meta.get("effort")),
+        }
         sessions.append(meta)
     sessions.sort(key=lambda m: m.get("updated_at", ""), reverse=True)
     return sessions
@@ -111,8 +163,7 @@ def list_sessions(state) -> list[dict]:
 
 def create_session(state, model: str, effort: str, title: str | None = None) -> dict:
     model = default_model(state.config)
-    if effort not in EFFORT_TO_MAX_TOKENS:
-        effort = DEFAULT_EFFORT
+    effort = normalize_effort(state.config, effort)
     sid = new_session_id()
     now = _now()
     meta = {
@@ -139,7 +190,11 @@ def load_session(state, session_id: str) -> dict | None:
     # The assistant chat follows the configured agent model globally. Older
     # sessions may have a different model persisted from the former dropdown;
     # normalize the returned metadata so UI/runtime state cannot drift.
-    meta = {**meta, "model": default_model(state.config)}
+    meta = {
+        **meta,
+        "model": default_model(state.config),
+        "effort": normalize_effort(state.config, meta.get("effort")),
+    }
     msgs_path = sdir / "messages.json"
     messages = json.loads(msgs_path.read_text()) if msgs_path.exists() else []
     return {"meta": meta, "messages": messages}
@@ -151,6 +206,7 @@ def save_session(state, session_id: str, meta: dict, messages: list[dict]) -> No
     meta = {
         **meta,
         "model": default_model(state.config),
+        "effort": normalize_effort(state.config, meta.get("effort")),
         "updated_at": _now(),
         "message_count": len(messages),
     }
@@ -193,7 +249,13 @@ def update_session_meta(state, session_id: str, **fields) -> dict | None:
     data = load_session(state, session_id)
     if data is None:
         return None
-    meta = {**data["meta"], **fields, "updated_at": _now()}
+    meta = {
+        **data["meta"],
+        **fields,
+        "model": default_model(state.config),
+        "effort": normalize_effort(state.config, fields.get("effort", data["meta"].get("effort"))),
+        "updated_at": _now(),
+    }
     sdir = _session_dir(state, session_id)
     (sdir / "meta.json").write_text(json.dumps(meta, indent=2))
     return meta
@@ -387,6 +449,76 @@ def _make_summarizer(model: str, api_key: str | None):
     return summarize
 
 
+def _render_cli_prompt(system_prompt: str, messages: list[dict], answer_path: Path) -> str:
+    lines = [
+        system_prompt,
+        "",
+        "# Conversation",
+    ]
+    for msg in visible_messages(messages):
+        role = "User" if msg["role"] == "user" else "Assistant"
+        lines.append(f"\n## {role}\n{msg.get('content', '').strip()}")
+    lines.extend([
+        "",
+        "# Response handoff",
+        f"Write the final answer only to `{answer_path}`.",
+        "Use Markdown. Do not wrap the answer in a code fence unless the answer itself needs one.",
+        "Do not rely on stdout for the answer; the app will display only that file.",
+        "If you need to update memory or inspect logs, use your CLI tools directly.",
+    ])
+    return "\n".join(lines).strip() + "\n"
+
+
+class _CliChatAgent:
+    def __init__(
+        self,
+        *,
+        state,
+        meta: dict,
+        cli_config,
+        system_prompt: str,
+        on_round: Callable[[int, int], None] | None,
+        should_stop: Callable[[], bool] | None,
+    ):
+        self.state = state
+        self.meta = meta
+        self.cli_config = cli_config
+        self.system_prompt = system_prompt
+        self.on_round = on_round
+        self.should_stop = should_stop
+
+    def run(self, messages: list[dict]) -> str:
+        config = self.state.config
+        effort = normalize_effort(config, self.meta.get("effort"))
+        if self.cli_config.backend == "codex":
+            cli_config = replace(self.cli_config, codex_reasoning_effort=effort)
+        else:
+            cli_config = replace(self.cli_config, claude_effort=effort)
+
+        log_dir = Path(config.log_dir).resolve()
+        session_id = str(self.meta.get("id") or "chat")
+        run_id = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
+        run_dir = log_dir / "chats" / "_cli_runs" / session_id / run_id
+        answer_path = run_dir / "answer.md"
+        prompt = _render_cli_prompt(self.system_prompt, messages, answer_path)
+
+        run_stage_via_cli(
+            stage="chat",
+            config=cli_config,
+            prompt=prompt,
+            cwd=log_dir,
+            log_dir=run_dir,
+            label=f"chat_{session_id}_{run_id}",
+            expected_outputs=[answer_path],
+            on_round=self.on_round,
+            should_stop=self.should_stop,
+        )
+
+        answer = answer_path.read_text().strip()
+        messages.append({"role": "assistant", "content": answer})
+        return answer
+
+
 async def build_chat_agent(
     state,
     meta: dict,
@@ -395,17 +527,28 @@ async def build_chat_agent(
     on_token: Callable[[str, int], None] | None = None,
     on_round_end: Callable[[int, bool], None] | None = None,
     should_stop: Callable[[], bool] | None = None,
-) -> ChatAgent:
+) -> ChatAgent | _CliChatAgent:
     config = state.config
     model = default_model(config)
-    effort = meta.get("effort", DEFAULT_EFFORT)
+    effort = normalize_effort(config, meta.get("effort"))
     max_output_tokens = EFFORT_TO_MAX_TOKENS.get(effort, EFFORT_TO_MAX_TOKENS[DEFAULT_EFFORT])
     api_key = resolve_api_key(config)
 
     log_dir = str(Path(config.log_dir).resolve())
-    await _ensure_sandbox_async([log_dir])
-
     system_prompt = SYSTEM_PROMPT_TEMPLATE.format(logs_dir=log_dir, max_tokens=max_output_tokens)
+
+    cli_config = load_cli_config(config)
+    if cli_config is not None:
+        return _CliChatAgent(
+            state=state,
+            meta={**meta, "effort": effort},
+            cli_config=cli_config,
+            system_prompt=system_prompt,
+            on_round=on_round,
+            should_stop=should_stop,
+        )
+
+    await _ensure_sandbox_async([log_dir])
 
     transcript_dir = Path(log_dir) / "chats" / "_transcripts"
     compact_tool = CompactTool(transcript_dir, _make_summarizer(model, api_key), model=model)

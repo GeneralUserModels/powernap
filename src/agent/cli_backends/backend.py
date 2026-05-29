@@ -7,6 +7,10 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 AGENT_BACKENDS = ("gemini", "codex", "claude_code")
+HARDCODED_CODEX_MODEL = "gpt-5.5"
+HARDCODED_CODEX_REASONING_EFFORT = "high"
+HARDCODED_CLAUDE_MODEL = "claude-sonnet-4-6"
+HARDCODED_CLAUDE_EFFORT = "medium"
 
 
 class CliAgentError(RuntimeError):
@@ -68,10 +72,10 @@ def cli_config_from_payload(payload: dict | None) -> CliBackendConfig | None:
         backend=payload["backend"],
         codex_bin=payload.get("codex_bin", "codex"),
         claude_bin=payload.get("claude_bin", "claude"),
-        codex_model=payload.get("codex_model", "gpt-5.5"),
-        codex_reasoning_effort=payload.get("codex_reasoning_effort", "high"),
-        claude_model=payload.get("claude_model", "claude-sonnet-4-6"),
-        claude_effort=payload.get("claude_effort", "medium"),
+        codex_model=HARDCODED_CODEX_MODEL,
+        codex_reasoning_effort=HARDCODED_CODEX_REASONING_EFFORT,
+        claude_model=HARDCODED_CLAUDE_MODEL,
+        claude_effort=HARDCODED_CLAUDE_EFFORT,
         extra_env=dict(payload.get("extra_env") or {}),
     )
 
@@ -98,9 +102,9 @@ def load_cli_config(server_config: Any) -> CliBackendConfig | None:
         backend=backend,  # type: ignore[arg-type]
         codex_bin=getattr(server_config, "codex_bin", "codex") or "codex",
         claude_bin=getattr(server_config, "claude_bin", "claude") or "claude",
-        codex_model=getattr(server_config, "codex_model", "gpt-5.5") or "gpt-5.5",
-        codex_reasoning_effort=getattr(server_config, "codex_reasoning_effort", "high") or "high",
-        claude_model=getattr(server_config, "claude_model", "claude-sonnet-4-6") or "claude-sonnet-4-6",
-        claude_effort=getattr(server_config, "claude_effort", "medium") or "medium",
+        codex_model=HARDCODED_CODEX_MODEL,
+        codex_reasoning_effort=HARDCODED_CODEX_REASONING_EFFORT,
+        claude_model=HARDCODED_CLAUDE_MODEL,
+        claude_effort=HARDCODED_CLAUDE_EFFORT,
         extra_env=extra_env,
     )

@@ -1,4 +1,9 @@
-You are building a self-contained mini-web-app that the user will open, edit, refine, and act from. The app IS the project surface — they manage the trip in it, edit the email draft in it, refine the review in it. Not a document they read.
+You are building a self-contained mini-web-app that the user will open, edit, refine, and act from. The app must be useful in one of two ways:
+
+1. **Control center:** the tada itself is the main project surface. The user manages the trip in it, edits the email draft in it, refines the review in it, tracks the decision in it, and acts from it.
+2. **Transfer surface:** when the real work belongs in another app (spreadsheet, document editor, project tracker, calendar, design tool, codebase, etc.), the tada prepares the information so the user can move it there cleanly. Provide copy/export actions for the exact structured content that belongs in that external app, such as TSV/CSV rows for a spreadsheet, Markdown for a doc, an email body, calendar details, checklist text, or a concise prompt/spec.
+
+Either way, the tada is not a passive document. It is either the place to manage the topic or the best launchpad for moving prepared information into the app where the user will execute the project.
 
 Final artifact: a folder at `{output_dir}` containing an `index.html` + `styles.css` + `app.js`, plus copied-in `base.css` and `components.js` from the shared library. The renderer loads `index.html` inside a sandboxed iframe.
 
@@ -7,8 +12,9 @@ Final artifact: a folder at `{output_dir}` containing an `index.html` + `styles.
 The artifact must be:
 - **Self-contained.** Everything needed to use it lives in `{output_dir}/`: HTML, CSS, JS, and any data the agent prepares (inline in `app.js` as `const DATA = ...`).
 - **Stateful.** Every editable surface (textarea, input, checkbox, sort order, expanded state) persists across reloads via `PN.useDraft` / `PN.useChecklist` (localStorage-backed, scoped to the moment's slug).
-- **Operable.** The user does the work in the app — checks items off, edits drafts, marks decisions, triggers actions — not just reads.
+- **Operable.** The user either does the work in the app — checks items off, edits drafts, marks decisions, triggers actions — or can copy/download the prepared content into the external app where the work should happen.
 - **Pre-filled with the actual content.** The value comes from the prepared draft / comparison / recommendation, not from the UI. Do not ship an empty form for the user to fill — fill it from the sources, then let them edit.
+- **Copy/export-first for external workflows.** If a spreadsheet, document, issue tracker, design tool, or other app is clearly the better execution surface, include visible copy/download buttons using `PN.Actions.copyToClipboard` or `PN.Actions.downloadFile`. Format copied content for direct paste into that app (for example tab-separated rows for spreadsheets, Markdown for docs, or a compact spec for a project tool).
 - **Preparation-only on outbound actions.** The app code never sends email, submits a form, posts publicly, deploys, books, buys, applies, cancels, or changes account settings on its own. Any outbound effect must go through `PN.Actions.*` and happen only after an explicit user click on a visible button.
 
 ## Decide the Artifact Shape First
@@ -24,6 +30,8 @@ Before picking a template, decide what the user is actually doing in this app. M
 - **Checklist / runbook** (only when the artifact really is a list of user actions) → `PN.useChecklist` for state; group sections with `PN.GlassCard`.
 - **Long-form recap / advisory / spec** → linear sections, optional timeline, optional action items.
 - **Status overview with real metrics** → KPI pills + filterable cards. Only when there are genuine numbers to track (counts, dollar amounts, deadlines, completion %).
+
+When an external app is the better execution surface, choose a shape that makes transfer effortless rather than pretending the tada should replace that tool. Examples: a spreadsheet-ready table with a "Copy TSV" button, a document outline with "Copy Markdown", a project plan with "Copy tasks", or a meeting prep surface with "Copy agenda".
 
 ## Pick a Starter Template
 

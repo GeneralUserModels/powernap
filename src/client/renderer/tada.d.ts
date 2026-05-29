@@ -162,7 +162,7 @@ interface ChatSessionMeta {
   id: string;
   title: string;
   model: string;
-  effort: "low" | "medium" | "high";
+  effort: string;
   created_at: string;
   updated_at: string;
   message_count: number;
@@ -170,9 +170,10 @@ interface ChatSessionMeta {
 
 interface ChatOptions {
   models: string[];
-  efforts: ("low" | "medium" | "high")[];
+  backend: "gemini" | "codex" | "claude_code";
+  efforts: string[];
   default_model: string;
-  default_effort: "low" | "medium" | "high";
+  default_effort: string;
   effort_max_tokens: Record<string, number>;
 }
 

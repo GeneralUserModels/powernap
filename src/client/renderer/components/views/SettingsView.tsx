@@ -160,6 +160,13 @@ export function SettingsView() {
     setValues(v => ({ ...v, agent_api_key: val, ...fanOut(AGENT_ROWS, "apiKeyKey", val) }));
   };
 
+  const handleAgentBackendChange = (val: "gemini" | "codex" | "claude_code") => {
+    setValues((vals) => ({
+      ...vals,
+      agent_backend: val,
+    }));
+  };
+
   const hasUnsavedChanges = allKeys().some((key) => {
     const saved = state.settings[key];
     const current = values[key];
@@ -168,6 +175,7 @@ export function SettingsView() {
 
   const modelType = values["model_type"] ?? "prompted";
   const isTinker = modelType === "powernap";
+  const selectedAgentBackend = (values["agent_backend"] ?? "gemini") as "gemini" | "codex" | "claude_code";
 
   return (
     <div id="settings-view" className="view active">
@@ -243,6 +251,26 @@ export function SettingsView() {
           </div>
 
           <div className="model-row">
+            <span className="model-row-label">Agent Backend</span>
+            <div className="model-row-fields" style={{ gridTemplateColumns: "1fr" }}>
+              <SimpleDropdown
+                value={selectedAgentBackend}
+                onChange={(v) => handleAgentBackendChange(v as "gemini" | "codex" | "claude_code")}
+                options={AGENT_BACKEND_OPTIONS as unknown as { value: string; label: string }[]}
+              />
+              {(selectedAgentBackend === "codex" || selectedAgentBackend === "claude_code") && (
+                <AgentBackendStatusPanel
+                  backend={selectedAgentBackend}
+                  label={selectedAgentBackend === "codex" ? "Codex CLI" : "Claude Code CLI"}
+                  info={agentBackendStatus?.backends[selectedAgentBackend]}
+                  onRefresh={refreshAgentBackendStatus}
+                />
+              )}
+            </div>
+          </div>
+
+          {selectedAgentBackend === "gemini" && (
+          <div className="model-row">
             <span className="model-row-label">Agent LM <span className="required-tag">Required</span></span>
             <div className="model-row-fields">
               <label className="field">
@@ -265,25 +293,7 @@ export function SettingsView() {
               </label>
             </div>
           </div>
-
-          <div className="model-row">
-            <span className="model-row-label">Agent Backend</span>
-            <div className="model-row-fields" style={{ gridTemplateColumns: "1fr" }}>
-              <SimpleDropdown
-                value={(values["agent_backend"] ?? "gemini") as "gemini" | "codex" | "claude_code"}
-                onChange={(v) => setValues((vals) => ({ ...vals, agent_backend: v }))}
-                options={AGENT_BACKEND_OPTIONS as unknown as { value: string; label: string }[]}
-              />
-              {(values["agent_backend"] === "codex" || values["agent_backend"] === "claude_code") && (
-                <AgentBackendStatusPanel
-                  backend={values["agent_backend"] as "codex" | "claude_code"}
-                  label={values["agent_backend"] === "codex" ? "Codex CLI" : "Claude Code CLI"}
-                  info={agentBackendStatus?.backends[values["agent_backend"]]}
-                  onRefresh={refreshAgentBackendStatus}
-                />
-              )}
-            </div>
-          </div>
+          )}
 
           {momentsEnabled && (
           <div className="model-row">
@@ -501,4 +511,3 @@ export function SettingsView() {
     </div>
   );
 }
-
