@@ -11,10 +11,12 @@ from pathlib import Path
 from litellm import completion as litellm_completion
 from pydantic import BaseModel
 
+from connectors._bounded import bounded_int_from_env, trim_items_latest_by_timestamp
 from connectors.mcp import MCPConnector
 from server.feature_flags import is_enabled
 
 logger = logging.getLogger(__name__)
+CONNECTOR_FETCH_MAX_ITEMS = bounded_int_from_env("TADA_CONNECTOR_FETCH_MAX_ITEMS", default=500)
 
 FILTER_PROMPT = """You are filtering {source} data to keep only items relevant to predicting what a user might do next on their computer.
 
@@ -117,6 +119,16 @@ async def _run_connector(cfg: ConnectorConfig, log_dir: Path, seen_dir: Path, fi
         since = _load_last_fetched(last_fetched_path)
         logger.info(f"Polling {cfg.name} (since={since})...")
         all_items = await cfg.connector.fetch(since)
+        if CONNECTOR_FETCH_MAX_ITEMS > 0 and len(all_items) > CONNECTOR_FETCH_MAX_ITEMS:
+            trim_result = trim_items_latest_by_timestamp(all_items, CONNECTOR_FETCH_MAX_ITEMS)
+            logger.warning(
+                "%s: fetch returned %d items; dropped %d oldest before filtering, kept newest%s",
+                cfg.name,
+                len(all_items),
+                trim_result.dropped,
+                "" if trim_result.used_timestamps else " (assuming fetch order)",
+            )
+            all_items = trim_result.items
         items = [i for i in all_items if i.get("id") and i["id"] not in seen]
         _save_last_fetched(last_fetched_path, time.time())
         if not items:

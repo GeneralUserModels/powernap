@@ -64,21 +64,53 @@ def cli_footer(
       `output_dir` and we instruct the agent to write substantive files
       there, then stop.
     """
-    lines: list[str] = [
-        "",
-        "---",
-        "## Runtime: CLI agent",
-        "",
-        "You are running under the codex/claude CLI. Use your built-in Read, "
-        "Write, Edit, and Bash tools directly — do not pretend you have any "
-        "powernap-specific tools (`write_file`, `read_file`, `PlanWrite`, "
-        "`subagent`, `task`). Those references in the body above are leftover "
-        "from a different runtime and do not apply to you.",
-        "",
-        f"Your working directory is `{cwd}`. Write outputs inside this "
-        "directory only — the sandbox forbids writing outside it.",
-        "",
-    ]
+    if stage == "discover":
+        lines: list[str] = [
+            "",
+            "---",
+            "## Runtime: CLI agent",
+            "",
+            f"Your working directory is `{cwd}`. Write outputs inside this directory only.",
+            "",
+        ]
+    else:
+        lines = [
+            "",
+            "---",
+            "## Runtime: CLI agent",
+            "",
+            "You are running under the codex/claude CLI. Use your built-in Read, "
+            "Write, Edit, and Bash tools directly — do not pretend you have any "
+            "powernap-specific tools (`write_file`, `read_file`, `PlanWrite`, "
+            "`subagent`, `task`). Those references in the body above are leftover "
+            "from a different runtime and do not apply to you.",
+            "",
+            f"Your working directory is `{cwd}`. Write outputs inside this "
+            "directory only — the sandbox forbids writing outside it.",
+            "",
+        ]
+
+    if stage == "execute":
+        lines.extend([
+            "Before your first read/search/write action, make a plan "
+            "using the CLI's native planning or todo mechanism. Do not create "
+            "a plan file and do not include the plan in the final app.",
+            "",
+            "Use live web search proactively for current public information "
+            "(sources, pricing, docs, papers, news, product details, or public "
+            "context the logs mention but do not explain).",
+            "",
+            "Use the browser tool when you need page text, dynamic content, "
+            "screenshots, interaction, or authenticated pages. This runner "
+            "adds browser access separately from Powernap's in-process tool "
+            "set; do not look for Powernap browser tool names in the CLI.",
+            "",
+            "Browser access may optionally use the user's browser cookies when "
+            "the runtime has permission. Cookie access may not be granted; if "
+            "authenticated browsing is unavailable, continue with public pages "
+            "and local evidence instead of blocking.",
+            "",
+        ])
 
     if output_model is not None and output_paths:
         out = output_paths[0]
@@ -92,11 +124,20 @@ def cli_footer(
             _schema_skeleton(output_model),
             "```",
             "",
-            "Do not write any other files. Do not include explanatory prose "
-            "in the JSON — just the structured object. Once the file is "
-            "written, stop immediately — do not run further verification, "
-            "exploration, or tool calls.",
         ])
+        if stage == "discover":
+            lines.extend([
+                "Do not write any other files. Do not include explanatory prose "
+                "in the JSON — just the structured object. Once the file is "
+                "written, stop immediately.",
+            ])
+        else:
+            lines.extend([
+                "Do not write any other files. Do not include explanatory prose "
+                "in the JSON — just the structured object. Once the file is "
+                "written, stop immediately — do not run further verification, "
+                "exploration, or tool calls.",
+            ])
     elif output_dir is not None:
         if stage == "execute":
             lines.extend([

@@ -18,9 +18,10 @@ For each candidate:
 6. **Drop inferred-completed actions.** Submissions, sends, purchases, deletions, approvals, cancellations are not "completed" because a button was visible or clicked — only because the candidate's evidence mentions explicit confirmation (success text, receipt, status change, post-action email, etc.). When in doubt, treat as still pending.
 7. **Drop engineering roadmap / migration / test-plan candidates** unless the candidate's evidence names independent signals beyond the visible edits (a deployment decision, handoff, review, deadline, integration point, or unresolved design choice). Do not let active implementation work survive by being reframed as a long-term architecture note.
 8. **Drop action-shaped candidates.** If `desired_artifact` reads as an action the user must take (*"send the email"*, *"submit the form"*, *"book the venue"*), reject it. The artifact must be the **prepared state** the user reviews before acting — an editable draft, a ranked comparison, a populated form, or structured content ready to copy/export into the right external app — not the action itself.
-9. **Drop content-as-checklist when a narrower draft would do.** Down-rank or reject candidates whose `desired_artifact` is `*_checklist`, `*_runbook`, `*_audit`, `*_summary` when the real need is a single concrete draft (the email itself, the comparison itself, the populated form itself).
-10. **Drop vague, generic, or weakly-evidenced candidates** — broad productivity coaching, life summaries without a clear use, passive recaps with no next action, trivial tasks a human could do in a few minutes, or tasks requiring data unlikely to be available.
-11. **Drop over-broad bridges.** Reject candidates that connect separate evidence clusters unless the candidate's evidence itself names the same project, person, deadline, artifact, decision, or follow-up. Broad thematic overlap or time-proximity is not enough.
+9. **Preserve real recurring workflows.** Do not reject a `scheduled` or `trigger` candidate merely because one current instance is done. Keep it when the candidate describes a durable rhythm, recurring input stream, or next-instance prep that would remain valuable on future runs.
+10. **Drop content-as-checklist when a narrower draft would do.** Down-rank or reject candidates whose `desired_artifact` is `*_checklist`, `*_runbook`, `*_audit`, `*_summary` when the real need is a single concrete draft (the email itself, the comparison itself, the populated form itself).
+11. **Drop vague, generic, or weakly-evidenced candidates** — broad productivity coaching, life summaries without a clear use, passive recaps with no next action, trivial tasks a human could do in a few minutes, or tasks requiring data unlikely to be available.
+12. **Drop over-broad bridges.** Reject candidates that connect separate evidence clusters unless the candidate's evidence itself names the same project, person, deadline, artifact, decision, or follow-up. Broad thematic overlap or time-proximity is not enough.
 
 Everything that survives the drops gets ranked.
 
@@ -33,6 +34,7 @@ Weight `usefulness × confidence × disregard × surprise` — but read it intel
 - A goal the user keeps deferring (high `disregard`) outranks one they're already actively pursuing with focus (low `disregard`).
 - A non-obvious bridge (high `surprise`) can outrank a more obvious one at slightly lower confidence — it creates the "aha" moment.
 - A speculative candidate (high `usefulness`, low `confidence`) ranks below a well-supported one of equal usefulness.
+- A strong recurring candidate can outrank a one-shot candidate with similar scores because it saves effort repeatedly.
 
 Keep lower-priority-but-still-viable candidates in `ranked`; Python applies the top-K cutoff. Each `reason` ≤ 1 sentence. No worked-example explanations — the rank speaks for itself.
 

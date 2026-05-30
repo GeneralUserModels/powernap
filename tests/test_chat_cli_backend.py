@@ -13,6 +13,8 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 from agent.cli_backends import load_cli_config
+from agent.cli_backends.claude import build_claude_command
+from agent.cli_backends.codex import build_codex_command
 from apps.chat import service
 
 
@@ -49,12 +51,12 @@ class ChatCliBackendTests(unittest.TestCase):
                 ["low", "medium", "high"],
             )
 
-    def test_create_session_defaults_invalid_codex_effort_to_high(self):
+    def test_create_session_defaults_invalid_codex_effort_to_xhigh(self):
         with tempfile.TemporaryDirectory() as d:
             state = SimpleNamespace(config=_config(d, "codex"))
             meta = service.create_session(state, model="", effort="max")
 
-        self.assertEqual(meta["effort"], "high")
+        self.assertEqual(meta["effort"], "xhigh")
         self.assertEqual(meta["model"], "gpt-5.5")
 
     def test_cli_config_ignores_config_file_model_and_effort_values(self):
@@ -65,9 +67,32 @@ class ChatCliBackendTests(unittest.TestCase):
         assert codex is not None
         assert claude is not None
         self.assertEqual(codex.codex_model, "gpt-5.5")
-        self.assertEqual(codex.codex_reasoning_effort, "high")
+        self.assertEqual(codex.codex_reasoning_effort, "xhigh")
         self.assertEqual(claude.claude_model, "claude-sonnet-4-6")
         self.assertEqual(claude.claude_effort, "medium")
+
+    def test_codex_command_can_enable_native_web_search(self):
+        cmd = build_codex_command(
+            codex_bin="codex",
+            model="gpt-5.5",
+            reasoning_effort="xhigh",
+            cwd=Path("/tmp/work"),
+            enable_web_search=True,
+        )
+
+        self.assertEqual(cmd[:3], ["codex", "--search", "exec"])
+
+    def test_claude_command_can_enable_browser_access(self):
+        cmd = build_claude_command(
+            claude_bin="claude",
+            model="claude-sonnet-4-6",
+            effort="medium",
+            add_dirs=[],
+            max_turns=10,
+            enable_browser=True,
+        )
+
+        self.assertIn("--chrome", cmd)
 
     def test_cli_chat_agent_uses_chat_codex_effort_and_appends_answer(self):
         with tempfile.TemporaryDirectory() as d:

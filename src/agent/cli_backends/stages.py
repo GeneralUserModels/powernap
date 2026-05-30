@@ -71,6 +71,7 @@ def run_stage_via_cli(
             model=config.codex_model,
             reasoning_effort=config.codex_reasoning_effort,
             cwd=cwd,
+            enable_web_search=stage == "execute",
         )
         is_claude_stream = False
     elif config.backend == "claude_code":
@@ -84,6 +85,7 @@ def run_stage_via_cli(
             max_turns=max_turns,
             add_dirs=add_dirs or [],
             stream_json=True,
+            enable_browser=stage == "execute",
         )
         is_claude_stream = True
     else:

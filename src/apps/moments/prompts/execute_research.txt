@@ -138,11 +138,12 @@ Powernap's logs are streaming/realtime — there is no future trajectory. Read b
 
 Use tools to complete the task thoroughly. You have local file, shell, planning, browser, subagent, background, and writing tools, plus server-side web search.
 
-- Use web search for current public information (sources, pricing, docs, papers, news, anything the local logs mention but don't explain). Prefer specific queries, then follow promising URLs with browser tools when you need page text, authenticated access, screenshots, or interaction.
+- Before researching or writing files, make a plan covering research, artifact shape, build, and verification. Use the planning mechanism your runtime normally provides; do not create a plan file and do not include the plan in the final app.
+- Use web search proactively for current public information (sources, pricing, docs, papers, news, product details, anything the local logs mention but don't explain). Prefer specific queries, then follow promising URLs with browser tools when you need page text, authenticated access, screenshots, or interaction.
 - **IMPORTANT:** Use the browser (not web search) for any site that requires authentication or dynamic content — Twitter/X, GitHub, Gmail, Slack, YouTube, Reddit, Google Docs.
-- Use `browser_navigate`, `browser_read_text`, `browser_click`, `browser_type`, `browser_screenshot` for web pages; authenticated sites work when the user's Chrome cookies are available.
+- Use `browser_navigate`, `browser_read_text`, `browser_click`, `browser_type`, `browser_screenshot` for web pages. Authenticated sites may work when the user's Chrome cookies are available; cookie access is optional and may not be granted. If cookies are unavailable or extraction fails, continue with public pages and local evidence instead of blocking.
 - Use `read_file` for known allowed files and `bash` for constrained inspection. Prefer `rg` over `grep`/`find`, scope to `{logs_dir}` / `{templates_dir}` / `{output_dir}`. **No network in bash** (no `curl`, `wget`, `pip install`, `git clone`).
-- Use `PlanWrite` and `PlanUpdate` for multi-step work. Lean on subagents via `task` for fan-out (per data source, per topic, per template asset). Use `background_run` and `check_background` only for bounded commands.
+- Lean on subagents via `task` for fan-out (per data source, per topic, per template asset). Use `background_run` and `check_background` only for bounded commands.
 - Use `write_file` to create `index.html`, `styles.css`, `app.js`, `base.css`, `components.js` under `{output_dir}`. Use `edit_file` only for files you are allowed to modify.
 - Use small, read-only scripts when they make the work more accurate or faster.
 <!-- POWERNAP:TOOL_PLUMBING_END -->

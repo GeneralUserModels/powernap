@@ -8,7 +8,7 @@ from typing import Any, Literal
 
 AGENT_BACKENDS = ("gemini", "codex", "claude_code")
 HARDCODED_CODEX_MODEL = "gpt-5.5"
-HARDCODED_CODEX_REASONING_EFFORT = "high"
+HARDCODED_CODEX_REASONING_EFFORT = "xhigh"
 HARDCODED_CLAUDE_MODEL = "claude-sonnet-4-6"
 HARDCODED_CLAUDE_EFFORT = "medium"
 

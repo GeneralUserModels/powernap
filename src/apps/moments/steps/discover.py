@@ -1,29 +1,15 @@
-"""Analyze user activity logs and write candidate moments as JSONL.
-
-The activity stream is sliced into ~64k-token chunks. Each chunk is sent to
-its own discovery agent (in parallel via a small ThreadPool) — that's what
-keeps any one prompt under the model's effective context cap. Within a chunk
-the agent is still pushed to explore beyond it (read further back in the
-same source files, check memory + accepted moments, look at sibling
-streams) so a candidate can be grounded in context the chunk itself does
-not contain.
-
-Each chunk run produces a `DiscoveryPayload` (`tasks: [...]`). The worker
-flattens tasks across all chunks, dedupes by id/slug, and writes
-`candidates.jsonl`. Reconcile and the multi-file output shape are gone.
-"""
+"""Analyze user activity logs in one discovery pass and write candidates."""
 
 from __future__ import annotations
 
 import json
 import logging
 import shutil
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass
+from collections import Counter, deque
 from datetime import datetime, timedelta
 from pathlib import Path
 from threading import Lock
-from typing import Any, Iterator
+from typing import Any
 
 from dotenv import load_dotenv
 from pydantic import ValidationError
@@ -32,10 +18,7 @@ from tenacity import before_sleep_log, retry, retry_if_exception_type, stop_afte
 load_dotenv()
 
 from apps.common.activity_streams import (
-    ActivityChunk,
     ActivityRow,
-    RenderedActivityRow,
-    chunk_activity_rows,
     merge_filtered_streams,
     parse_timestamp,
     render_activity_row,
@@ -69,43 +52,22 @@ FILTERED_STREAM_SOURCES = [
     "notifications/filtered.jsonl",
     "filesys/filtered.jsonl",
 ]
-ESTIMATED_CHARS_PER_TOKEN = 4
-CHUNK_TARGET_TOKENS = 64_000
-CHUNK_OVERLAP_TOKENS = 8_000
-CHUNK_TARGET_CHARS = CHUNK_TARGET_TOKENS * ESTIMATED_CHARS_PER_TOKEN
-CHUNK_OVERLAP_CHARS = CHUNK_OVERLAP_TOKENS * ESTIMATED_CHARS_PER_TOKEN
-DISCOVERY_CHUNK_CONCURRENCY = 4
+ACTIVITY_PREVIEW_MAX_ROWS = 240
+ACTIVITY_PREVIEW_MAX_CHARS = 120_000
 INITIAL_DISCOVERY_LOOKBACK = timedelta(days=2)
 # Hard ceiling on the activity window — never look back more than this even
 # if the last_run checkpoint is missing or stale.
 MAX_ACTIVITY_WINDOW = timedelta(days=2)
 STRUCTURED_OUTPUT_ATTEMPTS = 2
-AGENT_IDEATION_MAX_ROUNDS = 60
+AGENT_IDEATION_MAX_ROUNDS = 200
 logger = logging.getLogger(__name__)
 _BUILD_AGENT_LOCK = Lock()
 
 FilteredRow = ActivityRow
-RenderedRow = RenderedActivityRow
-
-
-@dataclass(frozen=True)
-class ChunkDiscoveryResult:
-    chunk_index: int
-    tasks: list[MomentCandidate]
 
 
 def _merged_filtered_rows(logs_path: Path, since: datetime | None):
     return merge_filtered_streams(logs_path, since, FILTERED_STREAM_SOURCES)
-
-
-def _chunk_filtered_rows(
-    rows: Iterator[FilteredRow],
-    target_chars: int | None = None,
-    overlap_chars: int | None = None,
-) -> Iterator[ActivityChunk]:
-    target_chars = CHUNK_TARGET_CHARS if target_chars is None else target_chars
-    overlap_chars = CHUNK_OVERLAP_CHARS if overlap_chars is None else overlap_chars
-    yield from chunk_activity_rows(rows, target_chars=target_chars, overlap_chars=overlap_chars)
 
 
 def _render_filtered_row(row: FilteredRow) -> str:
@@ -153,6 +115,50 @@ def _initial_discovery_since(logs_path: Path) -> datetime:
     return (latest or datetime.now()) - INITIAL_DISCOVERY_LOOKBACK
 
 
+def _activity_preview(logs_path: Path, since: datetime) -> tuple[str, str]:
+    """Return metadata and a bounded recent row preview for the single pass.
+
+    The preview is a hint, not the full source of truth. The discovery agent is
+    expected to inspect source files directly when evaluating candidates.
+    """
+    preview_rows: deque[str] = deque()
+    preview_chars = 0
+    total_rows = 0
+    first_ts: datetime | None = None
+    last_ts: datetime | None = None
+    source_counts: Counter[str] = Counter()
+
+    for row in _merged_filtered_rows(logs_path, since):
+        total_rows += 1
+        first_ts = row.timestamp if first_ts is None else min(first_ts, row.timestamp)
+        last_ts = row.timestamp if last_ts is None else max(last_ts, row.timestamp)
+        source_counts[row.source_name] += 1
+        rendered = _render_filtered_row(row)
+        preview_rows.append(rendered)
+        preview_chars += len(rendered) + 2
+        while (
+            len(preview_rows) > ACTIVITY_PREVIEW_MAX_ROWS
+            or preview_chars > ACTIVITY_PREVIEW_MAX_CHARS
+        ):
+            removed = preview_rows.popleft()
+            preview_chars -= len(removed) + 2
+
+    if total_rows == 0:
+        return (
+            "Rows after activity window: 0\nPreview rows shown: 0",
+            "(no recent filtered rows; use tools to inspect logs, memory, chats, accepted moments, and feedback for missed or recurring opportunities)",
+        )
+
+    source_summary = ", ".join(f"{name}={count}" for name, count in sorted(source_counts.items()))
+    metadata = "\n".join([
+        f"Rows after activity window: {total_rows}",
+        f"Preview rows shown: {len(preview_rows)} most recent",
+        f"Time range: {first_ts.strftime('%Y-%m-%d %H:%M:%S')} to {last_ts.strftime('%Y-%m-%d %H:%M:%S')}",
+        f"Sources: {source_summary}",
+    ])
+    return metadata, "\n\n".join(preview_rows)
+
+
 def _feedback_state_summary(tada_dir: Path) -> str:
     state_path = tada_dir / "results" / "_moment_state.json"
     feedback = sorted((tada_dir / "results").glob("*/feedback_*.md")) if (tada_dir / "results").exists() else []
@@ -194,7 +200,6 @@ def _parse_structured_discovery(payload: DiscoveryPayload) -> list[MomentCandida
 def _run_tool_agent_for_tasks(
     *,
     instruction: str,
-    logs_dir: str,
     tada_dir: Path,
     model: str,
     api_key: str | None,
@@ -243,7 +248,8 @@ def _build_instruction(
     tada_dir: Path,
     accepted_moments: str,
     feedback_state_summary: str,
-    chunk: ActivityChunk,
+    activity_preview_metadata: str,
+    activity_preview: str,
 ) -> str:
     return DISCOVER_TEMPLATE.format(
         now=now,
@@ -254,15 +260,14 @@ def _build_instruction(
         tada_dir=str(tada_dir),
         accepted_moments=accepted_moments,
         feedback_state_summary=feedback_state_summary,
-        chunk_metadata=chunk.metadata,
-        activity_chunk=chunk.rendered_text,
+        activity_preview_metadata=activity_preview_metadata,
+        activity_preview=activity_preview,
     )
 
 
-def _run_discovery_chunk_via_cli(
+def _run_discovery_via_cli(
     *,
     instruction: str,
-    chunk_index: int,
     tada_dir: Path,
     logs_dir: str,
     cli_config: CliBackendConfig,
@@ -272,10 +277,10 @@ def _run_discovery_chunk_via_cli(
     """
     out_dir = discovery_state_dir(tada_dir) / "cli"
     out_dir.mkdir(parents=True, exist_ok=True)
-    out_path = out_dir / f"discovery_chunk_{chunk_index}.json"
+    out_path = out_dir / "discovery.json"
     if out_path.exists():
         out_path.unlink()
-    logger.info("discover[cli] chunk=%d output=%s", chunk_index, out_path)
+    logger.info("discover[cli] output=%s", out_path)
 
     prompt = strip_tool_plumbing(instruction) + cli_footer(
         stage="discover",
@@ -289,8 +294,8 @@ def _run_discovery_chunk_via_cli(
         prompt=prompt,
         cwd=tada_dir,
         log_dir=out_dir,
-        label=f"discover_chunk_{chunk_index}",
-        # Claude needs explicit access to the logs dir for `read further back`;
+        label="discover",
+        # Claude needs explicit access to the logs dir for source inspection;
         # codex's workspace-write sandbox already allows reads outside cwd.
         add_dirs=[Path(logs_dir).resolve()],
         expected_outputs=[out_path],
@@ -300,150 +305,8 @@ def _run_discovery_chunk_via_cli(
     except (ValidationError, json.JSONDecodeError) as exc:
         raise CandidateError(f"CLI discovery wrote invalid JSON to {out_path}: {exc}") from exc
     tasks = _parse_structured_discovery(parsed)
-    logger.info("discover[cli] chunk=%d produced %d task(s)", chunk_index, len(tasks))
+    logger.info("discover[cli] produced %d task(s)", len(tasks))
     return tasks
-
-
-def _process_discovery_chunk(
-    *,
-    chunk: ActivityChunk,
-    now: str,
-    mode: str,
-    last_run: datetime | None,
-    activity_since: datetime,
-    logs_dir: str,
-    tada_dir: Path,
-    accepted_moments: str,
-    feedback_state_summary: str,
-    model: str,
-    api_key: str | None,
-    subagent_model: str | None,
-    subagent_api_key: str | None,
-    cli_config: CliBackendConfig | None = None,
-) -> ChunkDiscoveryResult:
-    instruction = _build_instruction(
-        now=now,
-        mode=mode,
-        last_run=last_run,
-        activity_since=activity_since,
-        logs_dir=logs_dir,
-        tada_dir=tada_dir,
-        accepted_moments=accepted_moments,
-        feedback_state_summary=feedback_state_summary,
-        chunk=chunk,
-    )
-    if cli_config is None:
-        tasks = _run_tool_agent_for_tasks(
-            instruction=instruction,
-            logs_dir=logs_dir,
-            tada_dir=tada_dir,
-            model=model,
-            api_key=api_key,
-            subagent_model=subagent_model,
-            subagent_api_key=subagent_api_key,
-        )
-    else:
-        tasks = _run_discovery_chunk_via_cli(
-            instruction=instruction,
-            chunk_index=chunk.index,
-            tada_dir=tada_dir,
-            logs_dir=logs_dir,
-            cli_config=cli_config,
-        )
-    return ChunkDiscoveryResult(chunk_index=chunk.index, tasks=tasks)
-
-
-def _process_discovery_chunks(
-    *,
-    chunks: list[ActivityChunk],
-    now: str,
-    mode: str,
-    last_run: datetime | None,
-    activity_since: datetime,
-    logs_dir: str,
-    tada_dir: Path,
-    accepted_moments: str,
-    feedback_state_summary: str,
-    model: str,
-    api_key: str | None,
-    subagent_model: str | None,
-    subagent_api_key: str | None,
-    cli_config: CliBackendConfig | None = None,
-) -> list[ChunkDiscoveryResult]:
-    if not chunks:
-        return []
-    max_workers = max(1, min(DISCOVERY_CHUNK_CONCURRENCY, len(chunks)))
-    logger.info("discover[run] processing %d chunk(s) with concurrency=%d", len(chunks), max_workers)
-    if max_workers == 1:
-        return [
-            _process_discovery_chunk(
-                chunk=chunk,
-                now=now,
-                mode=mode,
-                last_run=last_run,
-                activity_since=activity_since,
-                logs_dir=logs_dir,
-                tada_dir=tada_dir,
-                accepted_moments=accepted_moments,
-                feedback_state_summary=feedback_state_summary,
-                model=model,
-                api_key=api_key,
-                subagent_model=subagent_model,
-                subagent_api_key=subagent_api_key,
-                cli_config=cli_config,
-            )
-            for chunk in chunks
-        ]
-
-    results: list[ChunkDiscoveryResult] = []
-    with ThreadPoolExecutor(max_workers=max_workers) as pool:
-        futures = [
-            pool.submit(
-                _process_discovery_chunk,
-                chunk=chunk,
-                now=now,
-                mode=mode,
-                last_run=last_run,
-                activity_since=activity_since,
-                logs_dir=logs_dir,
-                tada_dir=tada_dir,
-                accepted_moments=accepted_moments,
-                feedback_state_summary=feedback_state_summary,
-                model=model,
-                api_key=api_key,
-                subagent_model=subagent_model,
-                subagent_api_key=subagent_api_key,
-                cli_config=cli_config,
-            )
-            for chunk in chunks
-        ]
-        for future in as_completed(futures):
-            results.append(future.result())
-    return sorted(results, key=lambda result: result.chunk_index)
-
-
-def _dedupe_across_chunks(results: list[ChunkDiscoveryResult]) -> list[MomentCandidate]:
-    """Flatten tasks from every chunk, drop later duplicates by id or slug.
-
-    The chunks overlap by design (CHUNK_OVERLAP_CHARS) so the same activity
-    can produce the same candidate in two neighbouring chunks. We keep the
-    first occurrence (earlier chunk index, sorted) and drop later twins.
-    """
-    out: list[MomentCandidate] = []
-    seen_ids: set[str] = set()
-    seen_slugs: set[str] = set()
-    dropped = 0
-    for result in results:
-        for candidate in result.tasks:
-            if candidate.id in seen_ids or candidate.slug in seen_slugs:
-                dropped += 1
-                continue
-            seen_ids.add(candidate.id)
-            seen_slugs.add(candidate.slug)
-            out.append(candidate)
-    if dropped:
-        logger.info("discover[run] deduped %d cross-chunk twin(s)", dropped)
-    return out
 
 
 def run(
@@ -467,8 +330,8 @@ def run(
     if cli_config is None:
         _ensure_sandbox([str(tada_dir.resolve())])
 
-    # Fresh slate every run — leftover chunk JSONs from a previous run would
-    # otherwise mask a mid-run failure (we'd happily read the stale output).
+    # Fresh slate every run — leftover CLI JSON from a previous run would
+    # otherwise mask a mid-run failure.
     cli_dir = state_dir / "cli"
     if cli_dir.exists():
         shutil.rmtree(cli_dir)
@@ -476,9 +339,8 @@ def run(
     last_run = read_checkpoint(checkpoint_path, default_age=DEFAULT_MISSING_CHECKPOINT_AGE)
     mode = "first_run" if last_run is None else "incremental"
     activity_since = last_run if last_run is not None else _initial_discovery_since(logs_path)
-    # Hard ceiling: never look back more than MAX_ACTIVITY_WINDOW. Protects
-    # against a stale or wiped checkpoint dumping weeks of activity into the
-    # chunking layer.
+    # Hard ceiling for the inline preview. The discovery agent may still inspect
+    # older source files with tools when a candidate needs history.
     earliest_allowed = datetime.now() - MAX_ACTIVITY_WINDOW
     if activity_since < earliest_allowed:
         logger.info("discover[run] activity_since=%s clamped to %s (MAX_ACTIVITY_WINDOW=%s)",
@@ -491,33 +353,38 @@ def run(
 
     accepted_moments = summarize_tada_tasks(tada_dir)
     feedback_summary = _feedback_state_summary(tada_dir)
-
-    rows = _merged_filtered_rows(logs_path, activity_since)
-    chunks = list(_chunk_filtered_rows(rows))
-    chunks_processed = len(chunks)
-    logger.info("discover[run] sliced activity into %d chunk(s)", chunks_processed)
-
-    if chunks_processed == 0:
+    activity_preview_metadata, activity_preview = _activity_preview(logs_path, activity_since)
+    if activity_preview_metadata.startswith("Rows after activity window: 0"):
         mode = "no_new_data"
-        candidates: list[MomentCandidate] = []
-    else:
-        chunk_results = _process_discovery_chunks(
-            chunks=chunks,
-            now=now,
-            mode=mode,
-            last_run=last_run,
-            activity_since=activity_since,
-            logs_dir=logs_dir,
+    instruction = _build_instruction(
+        now=now,
+        mode=mode,
+        last_run=last_run,
+        activity_since=activity_since,
+        logs_dir=logs_dir,
+        tada_dir=tada_dir,
+        accepted_moments=accepted_moments,
+        feedback_state_summary=feedback_summary,
+        activity_preview_metadata=activity_preview_metadata,
+        activity_preview=activity_preview,
+    )
+
+    if cli_config is None:
+        candidates = _run_tool_agent_for_tasks(
+            instruction=instruction,
             tada_dir=tada_dir,
-            accepted_moments=accepted_moments,
-            feedback_state_summary=feedback_summary,
             model=model,
             api_key=api_key,
             subagent_model=subagent_model,
             subagent_api_key=subagent_api_key,
+        )
+    else:
+        candidates = _run_discovery_via_cli(
+            instruction=instruction,
+            tada_dir=tada_dir,
+            logs_dir=logs_dir,
             cli_config=cli_config,
         )
-        candidates = _dedupe_across_chunks(chunk_results)
 
     candidate_path = write_candidates_jsonl(tada_dir, candidates)
     if write_run_checkpoint:
@@ -526,6 +393,6 @@ def run(
     return "\n".join([
         f"Mode: {mode}",
         f"Activity window starts after: {activity_since.strftime('%Y-%m-%d %H:%M')}",
-        f"Processed {chunks_processed} discovery chunks.",
+        "Processed discovery in one pass.",
         f"Wrote {len(candidates)} candidates to {candidate_path}",
     ])

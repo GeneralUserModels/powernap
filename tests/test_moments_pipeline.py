@@ -17,6 +17,7 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
+from agent.cli_backends.prompts import cli_footer
 from apps.moments.steps import discover, promote
 from apps.common import structured_completion as structured_completion_module
 from apps.common.structured_ops import StructuredOpsError, extract_json_object
@@ -117,6 +118,9 @@ class _FakeExecuteAgent:
         self.test_case.assertIn("Control center", prompt)
         self.test_case.assertIn("Transfer surface", prompt)
         self.test_case.assertIn("Copy/export-first for external workflows", prompt)
+        self.test_case.assertIn("make a plan", prompt)
+        self.test_case.assertIn("Use web search proactively", prompt)
+        self.test_case.assertIn("cookie access is optional", prompt)
         output_pages_dir = self.output_dir / "output"
         output_pages_dir.mkdir(parents=True)
         (output_pages_dir / "index.html").write_text("<!doctype html><div id=\"root\"></div>\n")
@@ -273,6 +277,13 @@ class MomentsPipelineTests(unittest.TestCase):
         with self.assertRaises(CandidateError):
             validate_candidate(_candidate(cadence="trigger", trigger=""))
 
+    def test_candidate_validation_preserves_priority_scores(self):
+        candidate = validate_candidate(_candidate(disregard=9, surprise=7))
+        self.assertEqual(candidate.disregard, 9)
+        self.assertEqual(candidate.surprise, 7)
+        self.assertEqual(candidate.to_json()["disregard"], 9)
+        self.assertEqual(candidate.to_json()["surprise"], 7)
+
     def test_structured_candidate_payload_requires_cadence_fields(self):
         with self.assertRaises(ValidationError):
             DiscoveryPayload.model_validate({"tasks": [_candidate(cadence="scheduled", schedule="")]})
@@ -427,6 +438,39 @@ class MomentsPipelineTests(unittest.TestCase):
             self.assertFalse((output_dir / "index.html").exists())
             self.assertEqual(len(research_agent.messages), 1)
 
+    def test_execute_cli_footer_requests_plan_web_search_and_browser(self):
+        with tempfile.TemporaryDirectory() as d:
+            cwd = Path(d)
+            footer = cli_footer(
+                stage="execute",
+                cwd=cwd,
+                output_dir=cwd / "output",
+            )
+
+        self.assertIn("Before your first read/search/write action", footer)
+        self.assertIn("Use live web search proactively", footer)
+        self.assertIn("Use the browser tool", footer)
+        self.assertIn("Cookie access may not be granted", footer)
+
+    def test_discover_cli_footer_only_includes_output_contract(self):
+        with tempfile.TemporaryDirectory() as d:
+            cwd = Path(d)
+            out = cwd / "discovery.json"
+            footer = cli_footer(
+                stage="discover",
+                cwd=cwd,
+                output_paths=[out],
+                output_model=DiscoveryPayload,
+            )
+
+        self.assertIn(str(out), footer)
+        self.assertIn("The JSON should follow this schema", footer)
+        self.assertIn("Once the file is written, stop immediately.", footer)
+        self.assertNotIn("Use your built-in Read", footer)
+        self.assertNotIn("Bash tools", footer)
+        self.assertNotIn("PlanWrite", footer)
+        self.assertNotIn("subagent", footer)
+
     def test_execute_fails_when_research_missing(self):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)
@@ -479,12 +523,30 @@ class MomentsPipelineTests(unittest.TestCase):
             discover_prompt = fake_agent.messages[0][0]["content"]
             self.assertIn("screen/filtered.jsonl", discover_prompt)
             self.assertIn("Activity window starts after:", discover_prompt)
-            self.assertIn("Activity Chunk", discover_prompt)
+            self.assertIn("Activity Preview", discover_prompt)
+            self.assertIn("one whole discovery pass", discover_prompt)
             self.assertIn("current implementation activity is not enough evidence", discover_prompt)
             self.assertIn("independent of the current edits", discover_prompt)
             self.assertIn("Control center", discover_prompt)
             self.assertIn("Transfer surface", discover_prompt)
             self.assertIn("copy/export", discover_prompt)
+            self.assertIn("Do not default to `once`", discover_prompt)
+            self.assertIn("durable rhythms", discover_prompt)
+            self.assertIn("Information foraging and synthesis", discover_prompt)
+            self.assertIn("Learning opportunities", discover_prompt)
+            self.assertIn("What The Logs Contain", discover_prompt)
+            self.assertIn("Read across the relevant logs", discover_prompt)
+            self.assertIn("Content production drudgery", discover_prompt)
+            self.assertIn("Timely one-off opportunities", discover_prompt)
+            self.assertIn("Active research", discover_prompt)
+            self.assertIn('cadence: "once"', discover_prompt)
+            self.assertNotIn("{logs_dir}/oneoffs/", discover_prompt)
+            self.assertNotIn("{logs_dir}/tasks/", discover_prompt)
+            self.assertNotIn("PlanWrite", discover_prompt)
+            self.assertNotIn("write_file", discover_prompt)
+            self.assertNotIn("read_file", discover_prompt)
+            self.assertNotIn("subagents", discover_prompt)
+            self.assertNotIn("Bash", discover_prompt)
             candidate_files = _candidate_files(root)
             self.assertEqual(len(candidate_files), 1)
             self.assertTrue(_tada_run_checkpoint(root).exists())
@@ -502,6 +564,7 @@ class MomentsPipelineTests(unittest.TestCase):
             self.assertIn("Do not call tools", promote_prompt)
             self.assertIn("control center", promote_prompt)
             self.assertIn("transfer surface", promote_prompt)
+            self.assertIn("Preserve real recurring workflows", promote_prompt)
 
     def test_invalid_discovery_keeps_seed_checkpoint(self):
         with tempfile.TemporaryDirectory() as d:
@@ -577,6 +640,7 @@ class MomentsPipelineTests(unittest.TestCase):
             with patch.object(discover, "build_agent", return_value=(_FakeToolAgent(discovery_json), None)):
                 result = discover.run(str(logs), model="fake")
 
+            self.assertIn("Processed discovery in one pass.", result)
             self.assertIn("Wrote 0 candidates", result)
             self.assertTrue(_tada_run_checkpoint(Path(d)).exists())
 

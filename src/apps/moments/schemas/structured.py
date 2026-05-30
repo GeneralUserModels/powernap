@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class StrictModel(BaseModel):
@@ -20,10 +20,10 @@ class CandidatePayload(StrictModel):
     cadence: Literal["once", "scheduled", "trigger"]
     schedule: str
     trigger: str
-    confidence: float
-    usefulness: int
-    disregard: int = 5
-    surprise: int = 5
+    confidence: float = Field(ge=0, le=1)
+    usefulness: int = Field(ge=1, le=10)
+    disregard: int = Field(default=5, ge=1, le=10)
+    surprise: int = Field(default=5, ge=1, le=10)
     is_update: bool = False  # True iff this draft reuses an existing accepted moment's slug.
     specific_instructions: str
     desired_artifact: str

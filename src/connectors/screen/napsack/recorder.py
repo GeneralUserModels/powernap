@@ -10,6 +10,7 @@ from typing import List, Optional
 
 from PIL import Image
 from napsack.record.__main__ import ScreenRecorder, get_monitor_dpis, calculate_monitor_scales
+from connectors._bounded import DropCounter, put_latest_queue
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +30,11 @@ SCREEN_FRAME_HEARTBEAT = os.path.join(tempfile.gettempdir(), "tada_screen_heartb
 # Default event types to disable for online recording (mouse move is too noisy)
 DEFAULT_DISABLE = ["move"]
 
+# The screen labeler can occasionally stall on API/network retries. Keep the
+# pre-label screenshot backlog bounded so those stalls cannot retain unlimited
+# in-memory image arrays.
+DEFAULT_AGGREGATION_QUEUE_MAXSIZE = 60
+
 
 class OnlineRecorder(ScreenRecorder):
 
@@ -37,7 +43,7 @@ class OnlineRecorder(ScreenRecorder):
     def __init__(
         self,
         *args,
-        queue_maxsize=0,
+        queue_maxsize=DEFAULT_AGGREGATION_QUEUE_MAXSIZE,
         log_dir=None,
         target_dpi=DEFAULT_TARGET_DPI,
         save_screenshots=False,
@@ -82,6 +88,7 @@ class OnlineRecorder(ScreenRecorder):
         with redirect_stdout(sys.stderr):
             super().__init__(*args, **kwargs)
         self.aggregation_queue = Queue(maxsize=queue_maxsize)
+        self._aggregation_drop_counter = DropCounter()
 
         # Always keep raw recorder sessions under the screen connector's area.
         # Assistant-facing streams stay at logs/screen/{labels,filtered}.jsonl;
@@ -143,8 +150,18 @@ class OnlineRecorder(ScreenRecorder):
             print(f"     {screenshot_status}     | {str(len(processed.events)):8s} |"
                   f"{str(processed.request.timestamp):<18} | {processed.request.reason}")
 
-        self.aggregation_queue.put(processed)
+        self._put_aggregation(processed)
         self.processed_aggregations += 1
+
+    def _put_aggregation(self, processed) -> None:
+        """Queue a processed aggregation, dropping oldest backlog on overflow."""
+        put_latest_queue(
+            self.aggregation_queue,
+            processed,
+            logger,
+            "screen: aggregation backlog",
+            self._aggregation_drop_counter,
+        )
 
     def iter_aggregations(self):
         while self.running:

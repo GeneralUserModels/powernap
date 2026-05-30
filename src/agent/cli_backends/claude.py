@@ -15,11 +15,14 @@ def build_claude_command(
     add_dirs: list[Path] | None = None,
     max_turns: int | None = None,
     stream_json: bool = True,
+    enable_browser: bool = False,
 ) -> list[str]:
     """Construct the `claude` argv. Prompt is delivered via stdin (`-p`)."""
     cmd = [claude_bin]
     if bare:
         cmd.append("--bare")
+    if enable_browser:
+        cmd.append("--chrome")
     cmd.extend(["--model", model, "--effort", effort, "--permission-mode", permission_mode])
     if stream_json:
         cmd.extend(["--output-format", "stream-json", "--verbose", "--include-partial-messages"])

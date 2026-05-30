@@ -13,6 +13,7 @@ def build_codex_command(
     cwd: Path,
     sandbox: str = "workspace-write",
     ignore_user_config: bool = False,
+    enable_web_search: bool = False,
 ) -> list[str]:
     """Construct the `codex exec` argv. Prompt is delivered via stdin (`-`).
 
@@ -23,8 +24,10 @@ def build_codex_command(
     on the runner's `expected_outputs` poll to terminate the subprocess once
     the file lands.
     """
-    cmd = [
-        codex_bin,
+    cmd = [codex_bin]
+    if enable_web_search:
+        cmd.append("--search")
+    cmd.extend([
         "exec",
         "-m",
         model,
@@ -34,7 +37,7 @@ def build_codex_command(
         sandbox,
         "--cd",
         str(cwd),
-    ]
+    ])
     if ignore_user_config:
         cmd.append("--ignore-user-config")
     cmd.append("-")
