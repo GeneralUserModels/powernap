@@ -522,8 +522,6 @@ class MomentsPipelineTests(unittest.TestCase):
                 discover.run(str(logs), model="fake")
             discover_prompt = fake_agent.messages[0][0]["content"]
             self.assertIn("screen/filtered.jsonl", discover_prompt)
-            self.assertIn("Activity window starts after:", discover_prompt)
-            self.assertIn("Activity Preview", discover_prompt)
             self.assertIn("one whole discovery pass", discover_prompt)
             self.assertIn("current implementation activity is not enough evidence", discover_prompt)
             self.assertIn("independent of the current edits", discover_prompt)
@@ -540,6 +538,11 @@ class MomentsPipelineTests(unittest.TestCase):
             self.assertIn("Timely one-off opportunities", discover_prompt)
             self.assertIn("Active research", discover_prompt)
             self.assertIn('cadence: "once"', discover_prompt)
+            self.assertNotIn("Activity window starts after:", discover_prompt)
+            self.assertNotIn("Activity Preview Metadata", discover_prompt)
+            self.assertNotIn("Activity Preview", discover_prompt)
+            self.assertNotIn("Rows after activity window", discover_prompt)
+            self.assertNotIn("source_file:", discover_prompt)
             self.assertNotIn("{logs_dir}/oneoffs/", discover_prompt)
             self.assertNotIn("{logs_dir}/tasks/", discover_prompt)
             self.assertNotIn("PlanWrite", discover_prompt)
@@ -581,7 +584,7 @@ class MomentsPipelineTests(unittest.TestCase):
             seeded = datetime.fromisoformat(_tada_run_checkpoint(Path(d)).read_text().strip())
             self.assertTrue(datetime.now() - timedelta(hours=25) <= seeded <= datetime.now() - timedelta(hours=23))
 
-    def test_first_discovery_defaults_to_24_hour_activity_window(self):
+    def test_discovery_does_not_inline_activity_preview(self):
         with tempfile.TemporaryDirectory() as d:
             logs = Path(d) / "logs"
             screen = logs / "screen"
@@ -598,9 +601,12 @@ class MomentsPipelineTests(unittest.TestCase):
                 result = discover.run(str(logs), model="fake")
 
             discover_prompt = fake_agent.messages[0][0]["content"]
-            self.assertIn("Activity window starts after:", discover_prompt)
-            self.assertIn("Activity window starts after:", result)
-            self.assertIn("recent topic", discover_prompt)
+            self.assertIn("Processed discovery in one pass.", result)
+            self.assertNotIn("Activity window starts after:", discover_prompt)
+            self.assertNotIn("Activity window starts after:", result)
+            self.assertNotIn("Activity Preview", discover_prompt)
+            self.assertNotIn("Rows after activity window", discover_prompt)
+            self.assertNotIn("recent topic", discover_prompt)
             self.assertNotIn("ancient topic", discover_prompt)
 
     def test_discovery_retries_malformed_json_once(self):

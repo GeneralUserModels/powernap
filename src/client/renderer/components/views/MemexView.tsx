@@ -9,6 +9,7 @@ import {
   parseFrontmatter,
   processWikiLinks,
   processInlineConfidence,
+  normalizeWikiTarget,
   confidenceColor,
   confidenceLabel,
 } from "./memexHelpers";
@@ -122,15 +123,10 @@ export function MemexView() {
   // Handle wiki-link clicks
   const handleLinkClick = useCallback((href: string) => {
     if (!href.startsWith("wiki:")) return;
-    const slug = href.slice(5);
-
-    const normalize = (s: string) =>
-      s.replace(/\.md$/, "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9\/]/g, "-").replace(/-+/g, "-").replace(/(^-|-$)/g, "");
-
-    const normalizedSlug = normalize(slug);
+    const normalizedSlug = normalizeWikiTarget(href.slice(5));
 
     const target = pages.find((p) => {
-      const n = normalize(p.path);
+      const n = normalizeWikiTarget(p.path);
       return n === normalizedSlug || n.endsWith("/" + normalizedSlug);
     });
     if (target) openPage(target.path);

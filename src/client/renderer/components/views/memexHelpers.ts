@@ -19,18 +19,38 @@ export function parseFrontmatter(md: string): Record<string, string> {
   return fm;
 }
 
+function parseWikiLinkRef(ref: string): { target: string; label: string } {
+  const pipeIdx = ref.indexOf("|");
+  const targetWithAnchor = pipeIdx >= 0 ? ref.slice(0, pipeIdx) : ref;
+  const label = (pipeIdx >= 0 ? ref.slice(pipeIdx + 1) : targetWithAnchor).trim() || targetWithAnchor.trim();
+  const target = targetWithAnchor.split("#", 1)[0].trim();
+  return { target, label };
+}
+
+export function normalizeWikiTarget(target: string): string {
+  const { target: resolvedTarget } = parseWikiLinkRef(target);
+  return resolvedTarget
+    .replace(/\.md$/i, "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .split("/")
+    .map((part) => part.replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, ""))
+    .filter(Boolean)
+    .join("/");
+}
+
+function escapeMarkdownLinkText(text: string): string {
+  return text.replace(/([\\[\]])/g, "\\$1");
+}
+
 /** Replace [[wiki-links]] with markdown links using a custom scheme. */
 export function processWikiLinks(md: string): string {
-  return md.replace(/\[\[([^\]]+)\]\]/g, (_, name: string) => {
-    const slug = name
-      .trim()
-      .toLowerCase()
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .replace(/[^a-z0-9\/]/g, "-")
-      .replace(/-+/g, "-")
-      .replace(/(^-|-$)/g, "");
-    return `[${name}](wiki:${slug})`;
+  return md.replace(/\[\[([^\]]+)\]\]/g, (_, ref: string) => {
+    const { target, label } = parseWikiLinkRef(ref);
+    const slug = normalizeWikiTarget(target);
+    if (!slug) return escapeMarkdownLinkText(label);
+    return `[${escapeMarkdownLinkText(label)}](wiki:${slug})`;
   });
 }
 

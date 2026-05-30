@@ -5,8 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import shutil
-from collections import Counter, deque
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 from threading import Lock
 from typing import Any
@@ -17,12 +16,6 @@ from tenacity import before_sleep_log, retry, retry_if_exception_type, stop_afte
 
 load_dotenv()
 
-from apps.common.activity_streams import (
-    ActivityRow,
-    merge_filtered_streams,
-    parse_timestamp,
-    render_activity_row,
-)
 from apps.common.structured_ops import StructuredOpsError, extract_json_object
 from agent.builder import build_agent, _ensure_sandbox
 from agent.cli_backends import (
@@ -45,118 +38,10 @@ from apps.moments.schemas.structured import DiscoveryPayload
 _PROMPTS = Path(__file__).resolve().parent.parent / "prompts"
 DISCOVER_TEMPLATE = (_PROMPTS / "discover.txt").read_text()
 
-FILTERED_STREAM_SOURCES = [
-    "screen/filtered.jsonl",
-    "email/filtered.jsonl",
-    "calendar/filtered.jsonl",
-    "notifications/filtered.jsonl",
-    "filesys/filtered.jsonl",
-]
-ACTIVITY_PREVIEW_MAX_ROWS = 240
-ACTIVITY_PREVIEW_MAX_CHARS = 120_000
-INITIAL_DISCOVERY_LOOKBACK = timedelta(days=2)
-# Hard ceiling on the activity window — never look back more than this even
-# if the last_run checkpoint is missing or stale.
-MAX_ACTIVITY_WINDOW = timedelta(days=2)
 STRUCTURED_OUTPUT_ATTEMPTS = 2
 AGENT_IDEATION_MAX_ROUNDS = 200
 logger = logging.getLogger(__name__)
 _BUILD_AGENT_LOCK = Lock()
-
-FilteredRow = ActivityRow
-
-
-def _merged_filtered_rows(logs_path: Path, since: datetime | None):
-    return merge_filtered_streams(logs_path, since, FILTERED_STREAM_SOURCES)
-
-
-def _render_filtered_row(row: FilteredRow) -> str:
-    return render_activity_row(row)
-
-
-def _latest_filtered_timestamp(logs_path: Path) -> datetime | None:
-    """Best-effort newest timestamp across the streaming filtered logs.
-
-    Used only to anchor the "prioritize since" hint on a first run when
-    there is no checkpoint. Cheap heuristic: read the tail of each
-    filtered.jsonl and take the max parsed timestamp.
-    """
-    candidates: list[datetime] = []
-    for rel in ("screen", "email", "calendar", "notifications", "filesys"):
-        path = logs_path / rel / "filtered.jsonl"
-        if not path.is_file():
-            continue
-        try:
-            with path.open("rb") as f:
-                f.seek(0, 2)
-                size = f.tell()
-                read = min(size, 64_000)
-                f.seek(size - read)
-                tail = f.read(read).decode(errors="replace")
-        except OSError:
-            continue
-        for line in reversed(tail.splitlines()):
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                entry = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            parsed = parse_timestamp(entry.get("timestamp")) if isinstance(entry, dict) else None
-            if parsed is not None:
-                candidates.append(parsed[0])
-                break
-    return max(candidates) if candidates else None
-
-
-def _initial_discovery_since(logs_path: Path) -> datetime:
-    latest = _latest_filtered_timestamp(logs_path)
-    return (latest or datetime.now()) - INITIAL_DISCOVERY_LOOKBACK
-
-
-def _activity_preview(logs_path: Path, since: datetime) -> tuple[str, str]:
-    """Return metadata and a bounded recent row preview for the single pass.
-
-    The preview is a hint, not the full source of truth. The discovery agent is
-    expected to inspect source files directly when evaluating candidates.
-    """
-    preview_rows: deque[str] = deque()
-    preview_chars = 0
-    total_rows = 0
-    first_ts: datetime | None = None
-    last_ts: datetime | None = None
-    source_counts: Counter[str] = Counter()
-
-    for row in _merged_filtered_rows(logs_path, since):
-        total_rows += 1
-        first_ts = row.timestamp if first_ts is None else min(first_ts, row.timestamp)
-        last_ts = row.timestamp if last_ts is None else max(last_ts, row.timestamp)
-        source_counts[row.source_name] += 1
-        rendered = _render_filtered_row(row)
-        preview_rows.append(rendered)
-        preview_chars += len(rendered) + 2
-        while (
-            len(preview_rows) > ACTIVITY_PREVIEW_MAX_ROWS
-            or preview_chars > ACTIVITY_PREVIEW_MAX_CHARS
-        ):
-            removed = preview_rows.popleft()
-            preview_chars -= len(removed) + 2
-
-    if total_rows == 0:
-        return (
-            "Rows after activity window: 0\nPreview rows shown: 0",
-            "(no recent filtered rows; use tools to inspect logs, memory, chats, accepted moments, and feedback for missed or recurring opportunities)",
-        )
-
-    source_summary = ", ".join(f"{name}={count}" for name, count in sorted(source_counts.items()))
-    metadata = "\n".join([
-        f"Rows after activity window: {total_rows}",
-        f"Preview rows shown: {len(preview_rows)} most recent",
-        f"Time range: {first_ts.strftime('%Y-%m-%d %H:%M:%S')} to {last_ts.strftime('%Y-%m-%d %H:%M:%S')}",
-        f"Sources: {source_summary}",
-    ])
-    return metadata, "\n\n".join(preview_rows)
 
 
 def _feedback_state_summary(tada_dir: Path) -> str:
@@ -243,25 +128,19 @@ def _build_instruction(
     now: str,
     mode: str,
     last_run: datetime | None,
-    activity_since: datetime,
     logs_dir: str,
     tada_dir: Path,
     accepted_moments: str,
     feedback_state_summary: str,
-    activity_preview_metadata: str,
-    activity_preview: str,
 ) -> str:
     return DISCOVER_TEMPLATE.format(
         now=now,
         mode=mode,
         last_run_date=last_run.strftime("%Y-%m-%d %H:%M") if last_run else "never",
-        activity_since_date=activity_since.strftime("%Y-%m-%d %H:%M"),
         logs_dir=logs_dir,
         tada_dir=str(tada_dir),
         accepted_moments=accepted_moments,
         feedback_state_summary=feedback_state_summary,
-        activity_preview_metadata=activity_preview_metadata,
-        activity_preview=activity_preview,
     )
 
 
@@ -338,35 +217,21 @@ def run(
 
     last_run = read_checkpoint(checkpoint_path, default_age=DEFAULT_MISSING_CHECKPOINT_AGE)
     mode = "first_run" if last_run is None else "incremental"
-    activity_since = last_run if last_run is not None else _initial_discovery_since(logs_path)
-    # Hard ceiling for the inline preview. The discovery agent may still inspect
-    # older source files with tools when a candidate needs history.
-    earliest_allowed = datetime.now() - MAX_ACTIVITY_WINDOW
-    if activity_since < earliest_allowed:
-        logger.info("discover[run] activity_since=%s clamped to %s (MAX_ACTIVITY_WINDOW=%s)",
-                    activity_since, earliest_allowed, MAX_ACTIVITY_WINDOW)
-        activity_since = earliest_allowed
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
     backend = "cli" if cli_config is not None else "gemini"
-    logger.info("discover[run] mode=%s backend=%s logs_dir=%s tada_dir=%s activity_since=%s",
-                mode, backend, logs_dir, tada_dir, activity_since)
+    logger.info("discover[run] mode=%s backend=%s logs_dir=%s tada_dir=%s",
+                mode, backend, logs_dir, tada_dir)
 
     accepted_moments = summarize_tada_tasks(tada_dir)
     feedback_summary = _feedback_state_summary(tada_dir)
-    activity_preview_metadata, activity_preview = _activity_preview(logs_path, activity_since)
-    if activity_preview_metadata.startswith("Rows after activity window: 0"):
-        mode = "no_new_data"
     instruction = _build_instruction(
         now=now,
         mode=mode,
         last_run=last_run,
-        activity_since=activity_since,
         logs_dir=logs_dir,
         tada_dir=tada_dir,
         accepted_moments=accepted_moments,
         feedback_state_summary=feedback_summary,
-        activity_preview_metadata=activity_preview_metadata,
-        activity_preview=activity_preview,
     )
 
     if cli_config is None:
@@ -392,7 +257,6 @@ def run(
     logger.info("discover[run] wrote %d candidates to %s", len(candidates), candidate_path)
     return "\n".join([
         f"Mode: {mode}",
-        f"Activity window starts after: {activity_since.strftime('%Y-%m-%d %H:%M')}",
         "Processed discovery in one pass.",
         f"Wrote {len(candidates)} candidates to {candidate_path}",
     ])
