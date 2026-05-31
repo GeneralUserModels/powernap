@@ -81,10 +81,22 @@ class ServerState:
         return next(iter(self.active_agents.values()))
 
     async def broadcast(self, event: str, data: dict):
-        """Push an event to all connected SSE clients."""
+        """Push an event to all connected SSE clients.
+
+        Never blocks: a slow or dead consumer can't stall the broadcaster.
+        When a client's bounded queue is full we drop its oldest message to
+        make room for the newest, so the queue stays bounded and a merely
+        slow client keeps receiving the freshest state. Truly dead clients
+        are reaped by the events endpoint's disconnect polling.
+
+        Race-free: there is no await between full()/get_nowait()/put_nowait(),
+        so this method runs atomically on the event loop.
+        """
         message = {"event": event, **data}
         for q in list(self.sse_queues):
-            await q.put(message)
+            if q.full():
+                q.get_nowait()  # discard oldest to bound memory
+            q.put_nowait(message)
 
     async def broadcast_activity(
         self,
