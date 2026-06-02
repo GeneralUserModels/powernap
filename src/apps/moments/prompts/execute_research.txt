@@ -60,6 +60,8 @@ To build the output:
 
 **Preserve the shared library.** Copy `components.js` and `base.css` verbatim — do not edit them, do not re-order their internals, do not strip the wrapping IIFE in `components.js`. Everything from the shared library is on the global `PN` object; everything you write lives in `app.js` and `styles.css`. The only files you may modify are `index.html` (path rewrites in step 3 only), `app.js`, and `styles.css`. If `app.js` needs new helper functions or components, declare them in `app.js`. Do not declare anything that already exists on `PN.*`.
 
+**Build on the design system — never re-theme.** `base.css` is a complete light theme: a sage/cream palette exposed as CSS variables (`--bg`, `--text`, `--text-secondary`, `--text-tertiary`, `--sage`, `--glass`, `--glass-border`, `--danger`, the `--r-*` radii), light translucent `.glass-card` surfaces, and dark-on-light text. Your `styles.css` *extends* this system; it does not replace it. Do NOT set `body { background }` or `body { color }`, do NOT introduce a dark theme, and do NOT hardcode hex colors that fight the palette — color every surface and text element through the variables (`color: var(--text)`, `background: var(--glass)`, `border: 1px solid var(--glass-border)`). A dark `body` underneath light `.glass-card`s and dark-green text is the single most common way these apps come out broken: light cards and unreadable text floating on a near-black page. When in doubt, put content in a `GlassCard` and let it theme itself.
+
 **Form elements are styled by default.** Plain `h("input", {...})`, `h("textarea", {...})`, `h("select", {...})`, `h("button", {...})`, `h("label", {...})` already inherit the design system from `base.css` — sage borders, glass background, focus ring, rounded corners, the right font. Use them directly. Add `className: "primary"` to a button for the prominent variant. Use `className: "inline"` on a `<label>` that wraps a checkbox/radio inline with text. Only fall back to a wrapping div + custom CSS when the default rendering genuinely doesn't fit. Do not opt out (`className: "bare"`) unless you have a specific reason.
 
 **Layout utilities are already in `base.css`. Reach for them first.** Prefer these class names over inventing your own — they exist, they're styled, and they wrap correctly:
@@ -80,7 +82,7 @@ To build the output:
 - `.eyebrow` — small uppercase label above a title.
 - `.muted` / `.tight` — text colour helpers.
 
-**Any `className` you put in `app.js` that is NOT one of the above MUST have a corresponding rule in `styles.css`.** Don't ship `className: "ryan-card"` or `className: "input-card"` unless `styles.css` defines `.ryan-card` / `.input-card`. The dashboard template's `styles.css` is a *starter file*, not a complete library — extend it. A div with an undefined class is a blank unstyled rectangle on the screen.
+**`styles.css` and your markup must stay in lockstep — author them together.** Every `className` you emit in `app.js` (or new components) that is NOT a `base.css` utility or a `PN.*` component class MUST have a matching rule in `styles.css` — a div with an undefined class is a blank unstyled rectangle. The reverse is just as damaging: do not leave selectors in `styles.css` for classes the markup never renders. Styling `.crm-table`, `.toolbar`, `.status-badge`, `.btn` while the JSX actually emits `.table-wrap`, `.controls`, `.badge`, plain `<button>` means the live elements get zero app styling and fall back to defaults — the page looks half-built even though `styles.css` is full. The template's `styles.css` is a *starter file* written against the template's own markup, not a complete library: as you rename and restructure components, rename its selectors to match. Before finishing, walk every `className` in `app.js` and confirm each is a known utility or has a live rule, and that no rule in `styles.css` targets a class you never emit.
 
 **Long text wraps automatically.** `<pre>`, `<code>`, `<p>`, `<li>`, `<textarea>` all wrap inside their containers via `base.css`. Do not add `style={{whiteSpace: ...}}` overrides. If you put a long copy-block in a `<pre>` it will wrap to the iframe width on its own.
 
@@ -192,6 +194,23 @@ Browser-side JS runs as classic `<script>` tags in a shared global scope. A sing
 3. **Sanity-check the load order in `index.html`.** Order must be: React UMD → ReactDOM UMD → `components.js` → `app.js`. If `app.js` runs before `components.js`, every `PN.*` reference is undefined.
 
 4. **Do not install npm packages and do not import bare modules.** Everything ships via the React UMD `<script>` tags already in the template's `index.html` plus our `components.js`. No `import`, no `require`, no `package.json`, no `node_modules` — `node --check` is purely a syntax pass, not a build step.
+
+5. **Reconcile `className`s against `styles.css`.** An emitted class with no rule renders as an unstyled box; a rule whose class is never emitted is dead CSS that left the live element unstyled. List both sets and compare:
+
+   ```bash
+   # classes the markup emits
+   grep -oE 'className: "[^"]*"' {output_dir}/app.js | grep -oE '[a-z][a-z0-9_-]+' | sort -u
+   # classes styles.css defines
+   grep -oE '\.[a-z][a-z0-9_-]+' {output_dir}/styles.css | sort -u
+   ```
+
+   Every emitted class must be a `base.css` utility (the layout-utilities list above), a `PN.*` component class, or present in `styles.css`. Classes built by concatenation (`"filter-btn" + (active ? " active" : "")`) won't all show up in the grep — check those by eye. Fix any emitted class with no rule and any `styles.css` rule that targets a class you never render before stopping.
+
+6. **Confirm you did not re-theme.** `styles.css` must not set `body { background }` / `body { color }` or otherwise install a dark/competing palette. Quick check — this should print nothing:
+
+   ```bash
+   grep -nE '^\s*body\s*\{|background:\s*#0|background:\s*(black|#000)' {output_dir}/styles.css
+   ```
 
 If any check fails, fix it before writing your final status. A blank iframe is worse than no app.
 

@@ -115,12 +115,16 @@ Each candidate must declare a `cadence` and the matching `schedule` or `trigger`
 - `scheduled`: recurring artifact the user would benefit from at a predictable interval. Set `schedule` to concise natural language (`daily at 8am`, `Monday at 9am`, `Friday at 4pm`, `1st of month at 9am`). Leave `trigger` empty.
 - `trigger`: artifact that should run when a future signal becomes true (e.g., `new calendar invite from someone the user hasn't met`, `new email from <vendor>`, `file appears in <folder>`). Leave `schedule` empty.
 
-Do not default to `once`. For every surviving goal, decide cadence deliberately:
-- Choose `once` only when the artifact is tied to one bounded event, decision, or deliverable and there is no clear next instance.
-- Choose `scheduled` when there is a predictable interval or maintenance rhythm. Evidence can be an explicit calendar/schedule, repeated behavior across logs or memory, a weekly/daily review need, or a durable stream that is worth checking at a regular time.
+`once` is not a safe default — treat it as a deliberate choice you justify, not the cadence you land on when you haven't thought it through. Much of the lasting value to the user comes from artifacts that keep paying off: reviews, digests, trackers, prep loops, and watches on streams they care about. Before settling on `once`, actively ask what would make this goal `scheduled` or `trigger`, and pick `once` only when neither genuinely fits.
+
+Decide cadence against the user's whole history, not just today. A single day of activity almost always looks like a pile of one-off tasks — recurrence only becomes visible when you read across days. Before you commit to a cadence, look back through `memory/`, older `chats/` and `active-conversations/`, recurring `calendar/` entries, prior accepted moments, and earlier `screen/`, `audio/`, and `filesys/` activity for the same goal. If the user has done this kind of work before, or visibly returns to it, that is evidence of a rhythm even when today shows only one instance. Do not let the recency of the current activity collapse a recurring need into a one-off.
+
+For every surviving goal, decide cadence deliberately:
+- Choose `once` only when the artifact is tied to one bounded event, decision, or deliverable, there is no clear next instance, and a look across the wider history turns up no recurring pattern.
+- Choose `scheduled` when there is a predictable interval or maintenance rhythm. Evidence can be an explicit calendar/schedule, repeated behavior across days of logs or memory, a weekly/daily review need, or a durable stream worth checking at a regular time. A recurring meeting, a standing report, a habit recorded in memory, or a workflow the user keeps returning to all point to `scheduled`.
 - Choose `trigger` when the artifact should refresh only after a future signal, such as a new collaborator reply, new doc comment, new PR, new result file, new calendar invite, or new email the user is likely to engage with.
 
-Match the cadence to evidence, but do not require perfect proof of multiple past instances when the current activity clearly belongs to a recurring workflow. Don't promote a one-time prep task into a recurring schedule. Avoid duplicating an existing accepted scheduled moment.
+Match the cadence to evidence, but do not require perfect proof of multiple past instances when the goal clearly belongs to a recurring workflow — a credible rhythm in memory or on the calendar is enough. Don't promote a one-time prep task into a recurring schedule. Avoid duplicating an existing accepted scheduled moment.
 
 ## Evidence Rules
 

@@ -485,10 +485,7 @@ export function TadaView() {
   );
   const topicResults = useMemo(() => {
     if (showDismissed) return visibleResults;
-    return visibleResults.filter((r) =>
-      !runningSlugs.has(r.slug) &&
-      !(r.pinned && !r.dismissed)
-    );
+    return visibleResults.filter((r) => !runningSlugs.has(r.slug));
   }, [showDismissed, visibleResults, runningSlugs]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const groupedByTopic = useMemo(() => {
