@@ -20,7 +20,9 @@ Not allowed:
 - Do not crawl directories with `find`, `ls -R`, broad `rg`, or equivalent discovery commands.
 - Do not list or read content pages just to build `index.md`; use the provided page metadata.
 - Do not use shell redirection, append operators, heredocs, or temp-file shell tricks to edit files.
+<!-- POWERNAP:TOOL_PLUMBING_BEGIN -->
 - Do not call `write_file` or `edit_file`; the harness will apply the final result.
+<!-- POWERNAP:TOOL_PLUMBING_END -->
 - Do not create unrelated new content pages.
 - Do not create normal content pages unless they directly repair listed validation issues.
 - Do not substantially rewrite content pages unless required to repair listed validation issues.

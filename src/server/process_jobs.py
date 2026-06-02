@@ -66,6 +66,16 @@ class ProcessJobRunner:
             stderr=asyncio.subprocess.PIPE,
             env=merged_env,
         )
+        # Bump StreamReader's per-line buffer. Codex/Claude relay raw log
+        # rows through their stderr (e.g. a single screen/filtered.jsonl line
+        # of mouse events can exceed 100KB). With the asyncio default of
+        # 64KB, readline() raises LimitOverrunError and the gather() crashes
+        # even though the worker itself finished cleanly. 16MB is plenty for
+        # any single line we expect; _safe_readline below catches anything
+        # bigger and just fragments it.
+        for stream in (proc.stdout, proc.stderr):
+            if stream is not None:
+                stream._limit = 16 * 1024 * 1024
 
         final_result: dict[str, Any] | None = None
         recent_output: list[str] = []
@@ -82,11 +92,38 @@ class ProcessJobRunner:
             if inspect.isawaitable(result):
                 await result
 
+        async def _safe_readline(reader: asyncio.StreamReader) -> bytes:
+            """readline() that survives over-limit lines by fragmenting them.
+
+            Returns b"" on real EOF. On LimitOverrunError, drains the bytes
+            the reader already has and returns them (without trailing
+            newline) — caller treats it as a normal line. The next readline
+            picks up the rest. WORKER_EVENT_PREFIX events fragmented this
+            way will fail json.loads downstream, but that's better than
+            killing the whole read loop.
+            """
+            try:
+                return await reader.readline()
+            except asyncio.LimitOverrunError as exc:
+                return await reader.readexactly(exc.consumed)
+            except ValueError as exc:
+                # Older Python wraps LimitOverrunError in ValueError; same recovery.
+                logger.warning("[worker:%s] readline ValueError: %s; fragmenting", job_name, exc)
+                # Best-effort: drain whatever's in the buffer right now.
+                buf = b""
+                while reader._buffer:
+                    chunk = bytes(reader._buffer)
+                    reader._buffer.clear()
+                    buf += chunk
+                    if len(buf) >= reader._limit:
+                        break
+                return buf
+
         async def read_stdout() -> None:
             nonlocal final_result
             assert proc.stdout is not None
             while True:
-                raw = await proc.stdout.readline()
+                raw = await _safe_readline(proc.stdout)
                 if not raw:
                     break
                 line = raw.decode(errors="replace").rstrip()
@@ -100,11 +137,17 @@ class ProcessJobRunner:
                 try:
                     event = json.loads(event_text)
                 except json.JSONDecodeError as exc:
-                    raise ProcessJobError(
-                        f"Worker {job_name} emitted malformed event JSON: {event_text}"
-                    ) from exc
+                    # Most likely a fragmented event from a previous
+                    # LimitOverrunError. Log and continue rather than crash
+                    # the whole run — the worker may still be making progress.
+                    logger.warning(
+                        "[worker:%s] dropped malformed event line (%d bytes): %s",
+                        job_name, len(event_text), exc,
+                    )
+                    continue
                 if not isinstance(event, dict):
-                    raise ProcessJobError(f"Worker {job_name} emitted non-object event")
+                    logger.warning("[worker:%s] dropped non-object event", job_name)
+                    continue
                 if event.get("type") == "result":
                     result = event.get("result")
                     if not isinstance(result, dict):
@@ -116,7 +159,7 @@ class ProcessJobRunner:
         async def read_stderr() -> None:
             assert proc.stderr is not None
             while True:
-                raw = await proc.stderr.readline()
+                raw = await _safe_readline(proc.stderr)
                 if not raw:
                     break
                 line = raw.decode(errors="replace").rstrip()

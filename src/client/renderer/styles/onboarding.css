@@ -666,6 +666,145 @@ button, input, select, textarea, a {
   margin: 0 0 10px 0;
 }
 
+/* Agent setup */
+.agent-setup-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.agent-setup-loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+.agent-setup-section,
+.agent-setup-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.agent-setup-section-head,
+.agent-setup-row,
+.agent-setup-row-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.agent-setup-section-head,
+.agent-setup-row {
+  justify-content: space-between;
+}
+.agent-setup-row {
+  padding: 10px 12px;
+  border-radius: var(--r-sm);
+  background: rgba(var(--sage-rgb), 0.04);
+  border: 1px solid rgba(var(--sage-rgb), 0.08);
+}
+.agent-setup-row-main {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.agent-setup-section-title,
+.agent-setup-row-title {
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--text);
+}
+.agent-setup-muted,
+.agent-setup-note,
+.agent-setup-message {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  line-height: 1.45;
+}
+.agent-setup-message {
+  color: var(--text-secondary);
+}
+.agent-setup-pill {
+  border-radius: 999px;
+  padding: 2px 7px;
+  font-size: 10px;
+  font-weight: 650;
+}
+.agent-setup-pill--ok {
+  background: rgba(var(--fern-rgb), 0.2);
+  color: var(--active-green);
+}
+.agent-setup-pill--warn {
+  background: rgba(213, 157, 58, 0.12);
+  color: #9a6d1f;
+}
+.agent-setup-pill--err {
+  background: rgba(201, 89, 75, 0.1);
+  color: var(--danger);
+}
+.agent-setup-pill--neutral {
+  background: rgba(var(--sage-rgb), 0.08);
+  color: var(--text-tertiary);
+}
+.agent-setup-link {
+  border: none;
+  background: transparent;
+  padding: 0;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
+  width: fit-content;
+}
+.agent-setup-link:hover {
+  color: var(--text);
+}
+.agent-setup-choice-list {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 6px;
+}
+.agent-setup-choice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 8px 10px;
+  border-radius: var(--r-sm);
+  border: 1px solid rgba(var(--sage-rgb), 0.12);
+  background: rgba(255,255,255,0.45);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.agent-setup-choice:hover:not(:disabled) {
+  background: rgba(255,255,255,0.7);
+}
+.agent-setup-choice.selected {
+  border-color: rgba(var(--sage-rgb), 0.35);
+  color: var(--text);
+  background: rgba(var(--mint-rgb), 0.28);
+}
+.agent-setup-choice:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.agent-setup-radio {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 1px solid rgba(var(--sage-rgb), 0.4);
+  background: rgba(255,255,255,0.7);
+  flex-shrink: 0;
+}
+.agent-setup-choice.selected .agent-setup-radio {
+  border: 4px solid var(--sage);
+}
+
 /* ── Tadas step ─────────────────────────────────────────── */
 
 .tadas-meta-card {

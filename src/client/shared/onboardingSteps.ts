@@ -27,6 +27,7 @@ export const ONBOARDING_STEPS: readonly OnboardingStep[] = [
   { id: "google_signin", type: "config" },
   { id: "connectors",    type: "config" },
   { id: "models_keys",   type: "config" },
+  { id: "agent_setup",   type: "intro" },
   { id: "getting_ready", type: "config" },
   { id: "tabracadabra",  type: "intro" },
   { id: "chat",          type: "intro" },

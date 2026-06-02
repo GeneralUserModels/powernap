@@ -8,7 +8,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from server.state import ServerState
-from server.routes import background_work, settings, status, events
+from server.routes import agent_backend, background_work, settings, status, events
 from server.routes.auth import router as auth_router
 from server.routes.onboarding import router as onboarding_router
 from connectors.routes import router as connectors_router
@@ -115,6 +115,7 @@ def create_app() -> FastAPI:
     app.include_router(moments_router)
     app.include_router(seeker_router)
     app.include_router(chat_router)
+    app.include_router(agent_backend.router)
     app.include_router(background_work.router)
     app.include_router(settings.router)
     app.include_router(status.router)

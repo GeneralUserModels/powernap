@@ -55,6 +55,8 @@ class ServerState:
 
     # Moment feedback — one ChatSession per slug, supports concurrent sessions
     feedback_sessions: dict[str, object] = field(default_factory=dict)
+    # Direct moment app editor — one EditorSession per slug.
+    editor_sessions: dict[str, object] = field(default_factory=dict)
     
     cost_logger_task: asyncio.Task | None = None
 
@@ -79,10 +81,22 @@ class ServerState:
         return next(iter(self.active_agents.values()))
 
     async def broadcast(self, event: str, data: dict):
-        """Push an event to all connected SSE clients."""
+        """Push an event to all connected SSE clients.
+
+        Never blocks: a slow or dead consumer can't stall the broadcaster.
+        When a client's bounded queue is full we drop its oldest message to
+        make room for the newest, so the queue stays bounded and a merely
+        slow client keeps receiving the freshest state. Truly dead clients
+        are reaped by the events endpoint's disconnect polling.
+
+        Race-free: there is no await between full()/get_nowait()/put_nowait(),
+        so this method runs atomically on the event loop.
+        """
         message = {"event": event, **data}
         for q in list(self.sse_queues):
-            await q.put(message)
+            if q.full():
+                q.get_nowait()  # discard oldest to bound memory
+            q.put_nowait(message)
 
     async def broadcast_activity(
         self,

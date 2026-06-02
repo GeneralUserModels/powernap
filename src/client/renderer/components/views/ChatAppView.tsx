@@ -17,7 +17,20 @@ import { FeatureActivityBanner } from "../FeatureActivityBanner";
 import { SimpleDropdown, type DropdownOption } from "../shared/SimpleDropdown";
 import { AGENT_MODELS } from "../shared/ModelDropdown";
 
-const EFFORT_LABELS: Record<string, string> = { low: "Low", medium: "Medium", high: "High" };
+const EFFORT_LABELS: Record<string, string> = {
+  minimal: "Minimal",
+  low: "Low",
+  medium: "Medium",
+  high: "High",
+  xhigh: "Extra high",
+  max: "Max",
+};
+
+const BACKEND_LABELS: Record<string, string> = {
+  gemini: "Tada",
+  codex: "Codex",
+  claude_code: "Claude Code",
+};
 
 const MODEL_LABELS: Record<string, string> = Object.fromEntries(
   AGENT_MODELS.map((m) => [m.value, m.label]),
@@ -166,6 +179,13 @@ export function ChatAppView() {
   const headerModel = activeMeta?.model ?? options?.default_model ?? draftModel;
   const headerEffort = activeMeta?.effort ?? draftEffort;
   const headerTitle = activeMeta?.title ?? "New chat";
+  const headerBackend = options?.backend ?? "gemini";
+  const headerBadge = headerBackend === "gemini" ? modelLabel(headerModel) : BACKEND_LABELS[headerBackend];
+  const effortTitle = options
+    ? headerBackend === "gemini"
+      ? `Max output tokens: ${options.effort_max_tokens[headerEffort]?.toLocaleString() ?? "?"}`
+      : `${BACKEND_LABELS[headerBackend]} effort`
+    : undefined;
 
   return (
     <div id="chat-view" className="view active chat-app">
@@ -220,7 +240,7 @@ export function ChatAppView() {
         <div className="chat-app-header">
           <div className="chat-app-title">{headerTitle}</div>
           <div className="chat-app-header-meta">
-            <span className="chat-badge">{modelLabel(headerModel)}</span>
+            <span className="chat-badge">{headerBadge}</span>
             <SimpleDropdown<string>
               className={`chat-effort-dropdown chat-effort-dropdown--${headerEffort}`}
               value={headerEffort}
@@ -229,11 +249,7 @@ export function ChatAppView() {
                 label: EFFORT_LABELS[eff] ?? eff,
               }))}
               onChange={(v) => setEffort(v)}
-              title={
-                options
-                  ? `Max output tokens: ${options.effort_max_tokens[headerEffort]?.toLocaleString() ?? "?"}`
-                  : undefined
-              }
+              title={effortTitle}
             />
           </div>
         </div>

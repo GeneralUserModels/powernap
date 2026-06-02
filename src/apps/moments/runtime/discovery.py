@@ -6,6 +6,7 @@ import asyncio
 import logging
 from pathlib import Path
 
+from agent.cli_backends import CliBackendConfig, cli_config_payload
 from server.feature_flags import is_enabled
 from server.process_jobs import relay_worker_event
 
@@ -23,12 +24,14 @@ class _DiscoveryBase:
         api_key: str | None = None,
         subagent_model: str | None = None,
         subagent_api_key: str | None = None,
+        cli_config: CliBackendConfig | None = None,
     ):
         self.logs_dir = str(Path(logs_dir).resolve())
         self.model = model
         self.api_key = api_key
         self.subagent_model = subagent_model
         self.subagent_api_key = subagent_api_key
+        self.cli_config = cli_config
 
 
 class MomentsDiscovery(_DiscoveryBase):
@@ -41,6 +44,7 @@ class MomentsDiscovery(_DiscoveryBase):
             self.logs_dir, model=self.model, api_key=self.api_key,
             subagent_model=self.subagent_model, subagent_api_key=self.subagent_api_key,
             write_run_checkpoint=write_run_checkpoint,
+            cli_config=self.cli_config,
         )
 
 
@@ -54,6 +58,7 @@ class TaskFilter(_DiscoveryBase):
             self.logs_dir, model=self.model, api_key=self.api_key,
             subagent_model=self.subagent_model, subagent_api_key=self.subagent_api_key,
             write_run_checkpoint=write_run_checkpoint,
+            cli_config=self.cli_config,
         )
 
 
@@ -96,6 +101,7 @@ async def run_moments_discovery_once(state) -> bool:
                 "subagent_model": subagent_model,
                 "subagent_api_key": subagent_api_key,
                 "run_checkpoint": str(run_checkpoint),
+                "cli_backend_config": cli_config_payload(cfg),
             },
             on_event=lambda event: relay_worker_event(state, event),
         )
@@ -130,6 +136,11 @@ async def run_moments_discovery(state) -> None:
     await _ensure_sandbox_async([tada_dir])
 
     run_checkpoint = tada_path / ".last_run"
+    # Local in-flight guard — the worker's `state.active_agents` entry shows
+    # up after a small delay (the first activity emit), so a tick fired right
+    # on the heels of the previous one could otherwise slip through and spawn
+    # a duplicate worker that collides on `_discovery/cli/`.
+    in_flight = False
 
     while True:
         try:
@@ -138,11 +149,20 @@ async def run_moments_discovery(state) -> None:
             if not (is_enabled(state.config, "moments") and state.config.moments_enabled):
                 continue
 
+            if in_flight or "moments_discovery" in state.active_agents \
+                    or "tada" in state.background_work_in_flight:
+                logger.debug("Moments discovery service: skip tick, already in flight")
+                continue
+
             schedule = getattr(state.config, "moments_discovery_schedule", "daily at 2am")
             if not scheduled_service_due(schedule, run_checkpoint):
                 continue
 
-            await run_moments_discovery_once(state)
+            in_flight = True
+            try:
+                await run_moments_discovery_once(state)
+            finally:
+                in_flight = False
 
         except asyncio.CancelledError:
             logger.info("Moments discovery service stopped")

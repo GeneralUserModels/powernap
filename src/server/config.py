@@ -35,6 +35,7 @@ SETTINGS_API_FIELDS: frozenset[str] = frozenset({
     "tabracadabra_enabled", "tabracadabra_model", "tabracadabra_api_key",
     "agent_model", "agent_api_key",
     "subagent_model", "subagent_api_key",
+    "agent_backend",
     "feature_flags",
     # Persisted directly via PUT /api/settings during onboarding (and by the
     # connector toggle UI later). The settings UI does not surface this field —
@@ -56,6 +57,8 @@ _PERSISTED_FIELDS = SETTINGS_API_FIELDS | {
     "tabracadabra_enabled", "tabracadabra_model", "tabracadabra_api_key",
     "agent_model", "agent_api_key",
     "subagent_model", "subagent_api_key",
+    "agent_backend",
+    "codex_bin", "claude_bin", "cli_bin_extra_path",
     "feature_flags",
 }
 
@@ -153,6 +156,16 @@ class ServerConfig(BaseModel):
     subagent_model: str = ""
     subagent_api_key: str = ""
 
+    # Agent backend selection — when not "gemini" the four stages (discover,
+    # promote, memory ingest/lint, execute) shell out to a CLI agent instead
+    # of running our in-process Agent + tools loop. CLIs use their own
+    # browser-based OAuth (codex login / claude auth login) for auth.
+    agent_backend: str = "gemini"          # "gemini" | "codex" | "claude_code"
+    codex_bin: str = "codex"
+    claude_bin: str = "claude"
+    # PATH segment appended for CLI subprocesses so binaries installed to a
+    # non-default npm prefix (e.g. ~/.local/bin) remain discoverable after restart.
+    cli_bin_extra_path: str = ""
     # Logging
     log_dir: str = Field(default_factory=lambda: os.getenv("TADA_LOG_DIR", "./logs"))
     log_to_wandb: bool = Field(default_factory=lambda: os.getenv("TADA_LOG_TO_WANDB", "") == "1")

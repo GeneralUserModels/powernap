@@ -18,6 +18,7 @@ from pydantic import AnyUrl
 from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
 
+from connectors._bounded import DropCounter, bounded_int_from_env, trim_list_latest
 from connectors._notify import run_notify_loop
 
 logger = logging.getLogger(__name__)
@@ -27,6 +28,11 @@ WATCH_DIRS = [
     os.path.expanduser("~/Documents"),
     os.path.expanduser("~/Downloads"),
 ]
+EVENT_BACKLOG_MAX = bounded_int_from_env(
+    "TADA_FILESYSTEM_EVENT_QUEUE_MAX",
+    "TADA_CONNECTOR_QUEUE_MAX",
+    default=1000,
+)
 
 _events: list[dict] = []
 _lock = threading.Lock()
@@ -34,6 +40,7 @@ _observer: Observer | None = None
 _active_session: ServerSession | None = None
 _notify_event: asyncio.Event | None = None
 _loop: asyncio.AbstractEventLoop | None = None
+_event_drop_counter = DropCounter(log_every=100)
 
 
 class _Handler(FileSystemEventHandler):
@@ -46,6 +53,13 @@ class _Handler(FileSystemEventHandler):
                 "path": event.src_path,
                 "timestamp": time.time(),
             })
+            trim_list_latest(
+                _events,
+                EVENT_BACKLOG_MAX,
+                logger,
+                "filesystem: event backlog",
+                _event_drop_counter,
+            )
         if _loop is not None and _notify_event is not None:
             _loop.call_soon_threadsafe(_notify_event.set)
 

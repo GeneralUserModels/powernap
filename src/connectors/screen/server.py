@@ -15,16 +15,36 @@ from mcp.server.fastmcp import FastMCP
 from mcp.server.session import ServerSession
 from pydantic import AnyUrl
 
+from connectors._bounded import DropCounter, bounded_int_from_env, put_latest_async_queue, trim_list_latest
 from connectors.screen.napsack import Labeler, OnlineRecorder
 
 logger = logging.getLogger(__name__)
 
 MIN_CHUNK = 10
+AGGREGATION_BACKLOG_MAX = bounded_int_from_env(
+    "TADA_SCREEN_AGG_QUEUE_MAXSIZE",
+    "TADA_CONNECTOR_QUEUE_MAX",
+    default=60,
+)
+LABEL_BUFFER_MAX = bounded_int_from_env(
+    "TADA_SCREEN_LABEL_BUFFER_MAX",
+    "TADA_CONNECTOR_QUEUE_MAX",
+    default=60,
+)
+if LABEL_BUFFER_MAX > 0:
+    LABEL_BUFFER_MAX = max(MIN_CHUNK, LABEL_BUFFER_MAX)
+LABELED_QUEUE_MAX = bounded_int_from_env(
+    "TADA_SCREEN_LABELED_QUEUE_MAX",
+    "TADA_CONNECTOR_QUEUE_MAX",
+    default=500,
+)
 
 _recorder: OnlineRecorder | None = None
 _labeler: Labeler | None = None
 _labeled_queue: asyncio.Queue[dict] | None = None
 _active_session: ServerSession | None = None
+_label_buffer_drop_counter = DropCounter()
+_labeled_queue_drop_counter = DropCounter()
 
 
 async def _labeling_loop() -> None:
@@ -37,6 +57,14 @@ async def _labeling_loop() -> None:
                 buffer.append(_recorder.aggregation_queue.get_nowait())
             except Empty:
                 break
+
+        trim_list_latest(
+            buffer,
+            LABEL_BUFFER_MAX,
+            logger,
+            "screen: label backlog",
+            _label_buffer_drop_counter,
+        )
 
         if len(buffer) < MIN_CHUNK:
             now = time.monotonic()
@@ -55,13 +83,13 @@ async def _labeling_loop() -> None:
             continue
 
         for label in labels:
-            await _labeled_queue.put({  # type: ignore[union-attr]
+            put_latest_async_queue(_labeled_queue, {  # type: ignore[arg-type]
                 "id": label["start_time"],
                 "summary": label["text"],
                 "dense_caption": label.get("dense_caption", ""),
                 "screenshot_path": label.get("screenshot_path"),
                 "raw_events": label.get("raw_events", []),
-            })
+            }, logger, "screen: labeled output queue", _labeled_queue_drop_counter)
 
         if _active_session is not None:
             try:
@@ -78,11 +106,12 @@ async def lifespan(_server: FastMCP) -> AsyncIterator[None]:  # type: ignore[typ
     tracker = init_cost_tracking()
     asyncio.create_task(run_cost_logger(tracker), name="screen-cost-logger")
 
-    _labeled_queue = asyncio.Queue()
+    _labeled_queue = asyncio.Queue(maxsize=LABELED_QUEUE_MAX)
     log_dir = os.environ["TADA_LOG_DIR"]
     _recorder = OnlineRecorder(
         fps=int(os.environ.get("TADA_FPS", "5")),
         buffer_seconds=int(os.environ.get("TADA_BUFFER_SECONDS", "120")),
+        queue_maxsize=AGGREGATION_BACKLOG_MAX,
         log_dir=log_dir,
     )
     _recorder.start()

@@ -14,12 +14,23 @@ from pathlib import Path
 from mcp.server.fastmcp import FastMCP
 from mcp.server.session import ServerSession
 from pydantic import AnyUrl
+from connectors._bounded import DropCounter, bounded_int_from_env, put_latest_async_queue, trim_list_latest
 from shared.model_catalog import default_model
 
 logger = logging.getLogger(__name__)
 
 CHUNK_SECONDS = 120  # 2 minutes
 DEFAULT_TRANSCRIPTION_MODEL = default_model("llm")
+TRANSCRIBED_QUEUE_MAX = bounded_int_from_env(
+    "TADA_AUDIO_TRANSCRIBED_QUEUE_MAX",
+    "TADA_CONNECTOR_QUEUE_MAX",
+    default=100,
+)
+LEFTOVER_STREAMS_MAX = bounded_int_from_env(
+    "TADA_AUDIO_LEFTOVER_STREAMS_MAX",
+    "TADA_CONNECTOR_QUEUE_MAX",
+    default=10,
+)
 
 _mic_recorder = None
 _sys_recorder = None
@@ -30,6 +41,19 @@ _flush_done_event: asyncio.Event | None = None
 _session_file: Path | None = None
 # Buffers from recorders disabled mid-chunk, drained on next _process_chunk
 _leftover_streams: list = []
+_transcribed_queue_drop_counter = DropCounter()
+_leftover_streams_drop_counter = DropCounter(log_every=10)
+
+
+def _append_leftover_stream(data) -> None:
+    _leftover_streams.append(data)
+    trim_list_latest(
+        _leftover_streams,
+        LEFTOVER_STREAMS_MAX,
+        logger,
+        "audio: leftover stream backlog",
+        _leftover_streams_drop_counter,
+    )
 
 
 async def _process_chunk(
@@ -77,7 +101,13 @@ async def _process_chunk(
         "summary": text,
         "timestamp": chunk_end,
     }
-    await _transcribed_queue.put(item)
+    put_latest_async_queue(
+        _transcribed_queue,  # type: ignore[arg-type]
+        item,
+        logger,
+        "audio: transcribed output queue",
+        _transcribed_queue_drop_counter,
+    )
 
     if _session_file is not None:
         await asyncio.to_thread(
@@ -129,7 +159,7 @@ async def lifespan(_server: FastMCP) -> AsyncIterator[None]:
     asyncio.create_task(run_cost_logger(tracker), name="audio-cost-logger")
 
     global _shutdown_event, _flush_done_event
-    _transcribed_queue = asyncio.Queue()
+    _transcribed_queue = asyncio.Queue(maxsize=TRANSCRIBED_QUEUE_MAX)
     _shutdown_event = asyncio.Event()
     _flush_done_event = asyncio.Event()
 
@@ -187,7 +217,7 @@ async def configure_sources(mic_enabled: bool | None = None, sys_enabled: bool |
         elif not mic_enabled and _mic_recorder is not None:
             data = _mic_recorder.read_and_clear()
             if data is not None:
-                _leftover_streams.append(data)
+                _append_leftover_stream(data)
             _mic_recorder.stop()
             _mic_recorder = None
             logger.info("audio: microphone source disabled")
@@ -201,7 +231,7 @@ async def configure_sources(mic_enabled: bool | None = None, sys_enabled: bool |
         elif not sys_enabled and _sys_recorder is not None:
             data = _sys_recorder.read_and_clear()
             if data is not None:
-                _leftover_streams.append(data)
+                _append_leftover_stream(data)
             _sys_recorder.stop()
             _sys_recorder = None
             logger.info("audio: system audio source disabled")

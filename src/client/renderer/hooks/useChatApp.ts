@@ -22,7 +22,7 @@ import { useAppContext } from "../context/AppContext";
 const STORAGE_KEY_EFFORT = "chat.draftEffort";
 
 function isChatEffort(value: string | null): value is ChatSessionMeta["effort"] {
-  return value === "low" || value === "medium" || value === "high";
+  return typeof value === "string" && value.length > 0;
 }
 
 export function useChatApp() {
@@ -56,6 +56,10 @@ export function useChatApp() {
   const controllersRef = useRef<Map<string, AbortController>>(new Map());
 
   const streaming = activeId !== null && pendingSessions.has(activeId);
+  const chatSettingsSignature = JSON.stringify({
+    agent_backend: appState.settings.agent_backend ?? "gemini",
+    agent_model: appState.settings.agent_model ?? "",
+  });
 
   const loadOptions = useCallback(async () => {
     const o = await getChatOptions();
@@ -130,7 +134,7 @@ export function useChatApp() {
 
   const setEffort = useCallback(
     async (effort: string) => {
-      if (!isChatEffort(effort)) return;
+      if (!isChatEffort(effort) || (options && !options.efforts.includes(effort))) return;
       // Always update the draft so the next "+ New chat" remembers this pick.
       setDraftEffort(effort);
       if (activeId && activeMeta) {
@@ -139,7 +143,7 @@ export function useChatApp() {
         await loadSessions();
       }
     },
-    [activeId, activeMeta, loadSessions],
+    [activeId, activeMeta, loadSessions, options],
   );
 
   const sendMessage = useCallback(
@@ -352,11 +356,26 @@ export function useChatApp() {
   // switches; we deliberately do NOT abort streams on cleanup.
 
   useEffect(() => {
-    if (appState.connected) {
-      loadOptions();
-      loadSessions();
-    }
-  }, [appState.connected, loadOptions, loadSessions]);
+    if (!appState.connected) return;
+    let cancelled = false;
+    (async () => {
+      await loadOptions();
+      await loadSessions();
+      const currentId = activeIdRef.current;
+      if (!currentId) return;
+      try {
+        const data = await getChatSession(currentId);
+        if (cancelled || activeIdRef.current !== currentId) return;
+        setActiveMeta(data.meta);
+        setItems(data.messages);
+      } catch {
+        // Session list refresh already covers missing/deleted sessions.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [appState.connected, chatSettingsSignature, loadOptions, loadSessions]);
 
   return {
     sessions,

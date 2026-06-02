@@ -11,6 +11,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
+from agent.cli_backends import CliAgentAuthError, CliAgentCancelled, CliAgentError
 from . import service
 
 logger = logging.getLogger(__name__)
@@ -44,10 +45,11 @@ async def get_options(request: Request):
     state = request.app.state.server
     return {
         "models": service.AVAILABLE_MODELS,
-        "efforts": list(service.EFFORT_TO_MAX_TOKENS.keys()),
+        "backend": service.backend_for_config(state.config),
+        "efforts": service.effort_options(state.config),
         "default_model": service.default_model(state.config),
-        "default_effort": service.DEFAULT_EFFORT,
-        "effort_max_tokens": service.EFFORT_TO_MAX_TOKENS,
+        "default_effort": service.default_effort(state.config),
+        "effort_max_tokens": service.effort_max_tokens(state.config),
     }
 
 
@@ -86,7 +88,7 @@ async def update_session_endpoint(session_id: str, body: UpdateSessionBody, requ
     state = request.app.state.server
     fields: dict = {}
     if body.effort is not None:
-        if body.effort not in service.EFFORT_TO_MAX_TOKENS:
+        if body.effort not in service.effort_options(state.config):
             return JSONResponse({"error": "Invalid effort"}, status_code=400)
         fields["effort"] = body.effort
     if body.title is not None:
@@ -246,6 +248,14 @@ async def _stream_response(
         cancelled = True
         stop_event.set()
         raise
+    except CliAgentAuthError:
+        message = "Selected agent backend is not signed in. Open Settings and sign in to Codex or Claude Code."
+        yield f"data: {json.dumps({'error': message, 'done': True})}\n\n"
+    except CliAgentCancelled:
+        raise
+    except CliAgentError as e:
+        logger.warning("chat CLI backend failed: %s", e)
+        yield f"data: {json.dumps({'error': str(e), 'done': True})}\n\n"
     except Exception as e:
         logger.exception("chat stream failed")
         yield f"data: {json.dumps({'error': str(e), 'done': True})}\n\n"

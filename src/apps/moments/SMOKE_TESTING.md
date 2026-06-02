@@ -292,8 +292,7 @@ prompt per discovery phase.
 3. Inspect the candidate JSON, not just the summary.
 4. Edit the smallest relevant prompt:
    - `prompts/discover.txt` for discovery behavior, source use, quality bar, examples, and candidate field discipline.
-   - `prompts/reconcile.txt` for duplicate/update routing after chunk discovery.
-   - `prompts/promote.txt` for ranking.
+   - `prompts/promote.txt` for ranking + duplicate/completion rejection (this is also where reconciliation lives now).
 5. Rerun the exact same temp slice and compare candidate slugs, desired
    artifacts, and promotion order.
 6. Record the attempt in an iteration log with the command, slice definition,

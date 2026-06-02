@@ -13,6 +13,42 @@ export const getSettings = () => request("GET", "/api/settings");
 export const updateSettings = (data: Record<string, unknown>) =>
   request("PUT", "/api/settings", data);
 
+// ── Agent backend (Codex / Claude Code CLIs) ─────────────────
+export type AgentBackendInfo = {
+  backend: string;
+  available: boolean;
+  version: string | null;
+  bin: string | null;
+  auth: "unknown" | "oauth" | "missing";
+  install_hint: string;
+};
+export type AgentBackendStatus = {
+  selected: "gemini" | "codex" | "claude_code";
+  cli_bin_extra_path: string;
+  npm: {
+    available: boolean;
+    version: string | null;
+    bin: string | null;
+    install_url: string;
+  };
+  backends: Record<string, AgentBackendInfo>;
+};
+export const getAgentBackendStatus = () =>
+  request("GET", "/api/agent-backend/status") as Promise<AgentBackendStatus>;
+export const installAgentBackend = (backend: string) =>
+  request("POST", "/api/agent-backend/install", { backend }) as Promise<{
+    ok: boolean; bin: string | null; extra_path: string | null;
+    log_path: string; reason: string | null; status: AgentBackendInfo;
+  }>;
+export const loginAgentBackend = (backend: string) =>
+  request("POST", "/api/agent-backend/login", { backend }) as Promise<{
+    ok: boolean; detail: string; bin: string | null; auth: string;
+  }>;
+export const logoutAgentBackend = (backend: string) =>
+  request("POST", "/api/agent-backend/logout", { backend }) as Promise<{
+    ok: boolean; detail: string; bin: string | null; auth: string;
+  }>;
+
 // ── Training ─────────────────────────────────────────────────
 export const getTrainingHistory = () => request("GET", "/api/user_models/history");
 export const getLabelHistory = () => request("GET", "/api/connectors/label-history");
@@ -43,12 +79,6 @@ export const disconnectOutlook = () => request("DELETE", "/api/auth/outlook");
 export const getMomentsResults = (includeDismissed = false) =>
   request("GET", `/api/moments/results${includeDismissed ? "?include_dismissed=true" : ""}`) as Promise<MomentResult[]>;
 
-export const getMomentResultPages = (slug: string) =>
-  request("GET", `/api/moments/results/${encodeURIComponent(slug)}/pages`) as Promise<MomentResultPage[]>;
-
-export const getMomentResultPage = (slug: string, path: string) =>
-  requestText("GET", `/api/moments/results/${encodeURIComponent(slug)}/pages/${path.split("/").map(encodeURIComponent).join("/")}`);
-
 export const updateMomentState = (slug: string, data: { dismissed?: boolean; pinned?: boolean; thumbs?: "up" | "down" | null }) =>
   request("PUT", `/api/moments/${slug}/state`, data);
 
@@ -60,6 +90,12 @@ export const recordMomentView = (slug: string) =>
 
 export const recordMomentViewEnd = (slug: string, data: { duration_ms: number }) =>
   request("POST", `/api/moments/${slug}/view-end`, data);
+
+export const getMomentDrafts = (slug: string) =>
+  request("GET", `/api/moments/${slug}/drafts`) as Promise<{ drafts: Record<string, unknown> }>;
+
+export const patchMomentDrafts = (slug: string, patch: Record<string, unknown>) =>
+  request("PATCH", `/api/moments/${slug}/drafts`, { patch }) as Promise<{ drafts: Record<string, unknown> }>;
 
 export const rerunMoment = (slug: string) =>
   request("POST", `/api/moments/${slug}/rerun`);

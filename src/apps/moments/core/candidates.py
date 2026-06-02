@@ -29,6 +29,8 @@ class MomentCandidate:
     trigger: str
     confidence: float
     usefulness: int
+    disregard: int
+    surprise: int
     specific_instructions: str
     desired_artifact: str
     likely_next_need: str
@@ -47,6 +49,8 @@ class MomentCandidate:
             "trigger": self.trigger,
             "confidence": self.confidence,
             "usefulness": self.usefulness,
+            "disregard": self.disregard,
+            "surprise": self.surprise,
             "specific_instructions": self.specific_instructions,
             "desired_artifact": self.desired_artifact,
             "likely_next_need": self.likely_next_need,
@@ -102,6 +106,18 @@ def _string_list(value: Any, field: str) -> list[str]:
     return result
 
 
+def _score_int(value: Any, field: str, default: int) -> int:
+    if value is None:
+        value = default
+    try:
+        score = int(value)
+    except (TypeError, ValueError) as exc:
+        raise CandidateError(f"{field} must be an integer") from exc
+    if not 1 <= score <= 10:
+        raise CandidateError(f"{field} must be between 1 and 10")
+    return score
+
+
 def validate_candidate(raw: dict[str, Any]) -> MomentCandidate:
     if not isinstance(raw, dict):
         raise CandidateError("candidate must be an object")
@@ -145,6 +161,8 @@ def validate_candidate(raw: dict[str, Any]) -> MomentCandidate:
         trigger=trigger,
         confidence=confidence,
         usefulness=usefulness,
+        disregard=_score_int(raw.get("disregard"), "disregard", 5),
+        surprise=_score_int(raw.get("surprise"), "surprise", 5),
         specific_instructions=_string(raw.get("specific_instructions"), "specific_instructions"),
         desired_artifact=_string(raw.get("desired_artifact"), "desired_artifact"),
         likely_next_need=_string(raw.get("likely_next_need"), "likely_next_need"),

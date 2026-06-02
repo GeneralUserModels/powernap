@@ -6,9 +6,16 @@ import threading
 
 import numpy as np
 
+from connectors._bounded import DropCounter, bounded_int_from_env
+
 logger = logging.getLogger(__name__)
 
 SAMPLE_RATE = 16_000
+MAX_BUFFER_SECONDS = bounded_int_from_env(
+    "TADA_AUDIO_RECORDER_BUFFER_SECONDS_MAX",
+    "TADA_CONNECTOR_AUDIO_BUFFER_SECONDS_MAX",
+    default=300,
+)
 
 
 def _check_macos_version() -> None:
@@ -29,6 +36,9 @@ class SystemAudioRecorder:
         _check_macos_version()
         self.sample_rate = sample_rate
         self._buffer: list[np.ndarray] = []
+        self._buffer_samples = 0
+        self._max_buffer_samples = self.sample_rate * MAX_BUFFER_SECONDS if MAX_BUFFER_SECONDS > 0 else 0
+        self._drop_counter = DropCounter(log_every=10)
         self._lock = threading.Lock()
         self._stream = None
         self._delegate = None
@@ -134,6 +144,7 @@ class SystemAudioRecorder:
                 return None
             data = np.concatenate(self._buffer)
             self._buffer.clear()
+            self._buffer_samples = 0
         return data
 
     def _process_sample_buffer(self, sample_buffer) -> None:
@@ -166,3 +177,20 @@ class SystemAudioRecorder:
 
         with self._lock:
             self._buffer.append(samples)
+            self._buffer_samples += len(samples)
+            dropped = 0
+            while (
+                self._max_buffer_samples > 0
+                and self._buffer_samples > self._max_buffer_samples
+                and self._buffer
+            ):
+                old = self._buffer.pop(0)
+                self._buffer_samples -= len(old)
+                dropped += 1
+            if dropped:
+                self._drop_counter.add(
+                    dropped,
+                    logger,
+                    "system audio: sample backlog",
+                    self._max_buffer_samples,
+                )

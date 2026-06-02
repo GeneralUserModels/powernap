@@ -13,6 +13,7 @@ import { ChatStep } from "./steps/ChatStep";
 import { TadasStep } from "./steps/TadasStep";
 import { MemexStep } from "./steps/MemexStep";
 import { ModelsKeysStep } from "./steps/ModelsKeysStep";
+import { AgentSetupStep } from "./steps/AgentSetupStep";
 import { AGENT_MODELS } from "../shared/ModelDropdown";
 import { AGENT_ROWS, fanOut } from "../shared/AdvancedLLMSection";
 import {
@@ -42,6 +43,7 @@ import {
 // Keyed by step id from ONBOARDING_STEPS.
 const STEP_TITLES: Record<string, string> = {
   welcome: "Welcome to Tada",
+  agent_setup: "Agent Setup",
   tabracadabra: "Tabracadabra",
   chat: "Chat",
   tadas: "Tadas",
@@ -49,6 +51,7 @@ const STEP_TITLES: Record<string, string> = {
 };
 
 const STEP_DESCRIPTIONS: Record<string, string> = {
+  agent_setup: "Install Codex and Claude Code, then use either, both, or neither.",
   tabracadabra: "Press Option + Tab to autocomplete or prompt from anywhere.",
   chat: "Ask anything — answers personalized with your emails, calendar, and what you've been working on.",
   tadas: "Proactive mini-apps that run on their own schedule — answers waiting before you need to ask.",
@@ -60,6 +63,12 @@ const STEP_ICONS: Record<string, React.ReactNode> = {
     <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
       <path d="M3 4.5h10M3 8h10M3 11.5h7" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
       <path d="M11.2 10.7 13.5 8.4l-2.3-2.3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  ),
+  agent_setup: (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+      <path d="M4 4.5h8M4 8h8M4 11.5h5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+      <path d="M11.3 10.7 13.3 8.7l-2-2" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
     </svg>
   ),
   chat: (
@@ -328,6 +337,15 @@ export function Onboarding({ serverReady = false }: { serverReady?: boolean }) {
 
   const saveSettings = () => updateSettings(buildSettings());
 
+  const handleAgentSetupContinue = async (backend: "gemini" | "codex" | "claude_code") => {
+    try {
+      await updateSettings({ agent_backend: backend });
+    } catch (e) {
+      console.error("[onboarding] failed to persist agent backend", e);
+    }
+    advance(step);
+  };
+
   // When the user advances past the connectors step, snapshot every connector
   // they've granted/connected and persist it via PUT /api/settings. This is
   // the single write path for enabled_connectors during onboarding — finalize
@@ -534,6 +552,13 @@ export function Onboarding({ serverReady = false }: { serverReady?: boolean }) {
           setUseAgentOverride={setUseAgentOverride}
           onBack={() => goBack(step)}
           onFinish={() => { saveSettings(); advance(step); }}
+        />
+      )}
+
+      {currentId === "agent_setup" && (
+        <AgentSetupStep
+          onBack={() => goBack(step)}
+          onContinue={handleAgentSetupContinue}
         />
       )}
 

@@ -17,14 +17,25 @@ async def stream_events(request: Request):
     state = request.app.state.server
 
     async def generator():
-        queue: asyncio.Queue = asyncio.Queue()
+        # Bounded: a slow/orphaned consumer holds at most this many messages.
+        # broadcast() drops the oldest message when full, so the queue can
+        # never grow without limit regardless of how far a client falls behind.
+        queue: asyncio.Queue = asyncio.Queue(maxsize=1000)
         state.sse_queues.add(queue)
         logger.info(f"SSE client connected ({len(state.sse_queues)} total)")
         try:
-            while True:
-                if await request.is_disconnected():
-                    break
-                msg = await queue.get()
+            # Flush headers immediately (fires the client's onopen, defeats proxy
+            # buffering) and set the reconnect backoff to tame reconnect storms.
+            yield "retry: 3000\n\n"
+            while not await request.is_disconnected():
+                # Wake periodically even with no events so we re-check the
+                # disconnect above; the keepalive write also fails fast on a
+                # dead socket, breaking the loop instead of parking forever.
+                try:
+                    msg = await asyncio.wait_for(queue.get(), timeout=15.0)
+                except asyncio.TimeoutError:
+                    yield ": keepalive\n\n"
+                    continue
                 yield f"data: {json.dumps(msg)}\n\n"
         finally:
             state.sse_queues.discard(queue)

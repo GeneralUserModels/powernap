@@ -1613,9 +1613,11 @@ button, input, select, textarea, canvas, a, label,
 }
 
 .tada-toc-item {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: flex-start;
-  gap: 10px;
+  column-gap: 8px;
+  row-gap: 3px;
   padding: 6px 12px;
   background: transparent;
   border: none;
@@ -1628,6 +1630,11 @@ button, input, select, textarea, canvas, a, label,
   color: var(--text-secondary);
 }
 
+.tada-toc-item--running,
+.tada-toc-item--pinned {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
 .tada-toc-item:hover {
   background: rgba(var(--sage-rgb), 0.09);
   color: var(--text);
@@ -1638,7 +1645,7 @@ button, input, select, textarea, canvas, a, label,
 }
 
 .tada-toc-item-glyph {
-  flex-shrink: 0;
+  grid-column: 1;
   color: var(--sage);
   align-self: flex-start;
   margin-top: 5px;
@@ -1652,11 +1659,12 @@ button, input, select, textarea, canvas, a, label,
 }
 
 .tada-toc-item-name {
-  flex: 1;
+  grid-column: 1;
   min-width: 0;
   white-space: normal;
-  overflow-wrap: break-word;
-  word-break: normal;
+  overflow-wrap: normal;
+  word-break: keep-all;
+  hyphens: none;
   font-family: inherit;
   font-size: 10.5px;
   font-weight: 600;
@@ -1665,15 +1673,25 @@ button, input, select, textarea, canvas, a, label,
   line-height: 1.45;
 }
 
+.tada-toc-item--running .tada-toc-item-name,
+.tada-toc-item--pinned .tada-toc-item-name {
+  grid-column: 2;
+}
+
 .tada-toc-item-count {
+  grid-column: 2;
   font-size: 10px;
   color: var(--text-tertiary);
   font-variant-numeric: tabular-nums;
   font-weight: 500;
-  flex-shrink: 0;
   letter-spacing: 0.02em;
   font-family: inherit;
   opacity: 0.75;
+}
+
+.tada-toc-item--running .tada-toc-item-count,
+.tada-toc-item--pinned .tada-toc-item-count {
+  grid-column: 3;
 }
 
 .tada-toc-item:hover .tada-toc-item-count {
@@ -1696,7 +1714,8 @@ button, input, select, textarea, canvas, a, label,
 }
 
 .tada-toc-item-unread {
-  flex-shrink: 0;
+  grid-column: 1 / -1;
+  justify-self: start;
   margin-top: 1px;
   padding: 1px 5px;
   border-radius: 999px;
@@ -1708,6 +1727,11 @@ button, input, select, textarea, canvas, a, label,
   letter-spacing: 0.04em;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+
+.tada-toc-item--running .tada-toc-item-unread,
+.tada-toc-item--pinned .tada-toc-item-unread {
+  grid-column: 2 / -1;
 }
 
 .tada-toc-divider {
@@ -2236,7 +2260,7 @@ button, input, select, textarea, canvas, a, label,
   overflow: hidden;
 }
 
-/* ── Detail Split (markdown result + feedback panel) ──── */
+/* ── Detail Split (generated app + editor panel) ──── */
 
 .tada-detail-split {
   display: flex;
@@ -2254,7 +2278,7 @@ button, input, select, textarea, canvas, a, label,
   min-width: 0;
 }
 
-.tada-feedback-panel {
+.tada-editor-panel {
   width: 340px;
   flex-shrink: 0;
   display: flex;
@@ -2263,141 +2287,35 @@ button, input, select, textarea, canvas, a, label,
   overflow: hidden;
 }
 
-/* ── Markdown result viewer ───────────────────────────── */
-
-.tada-result-viewer {
-  flex: 1;
-  min-height: 0;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 220px;
-  gap: 0;
-  overflow: hidden;
-}
-
-.tada-result-rail {
-  grid-column: 2;
-  grid-row: 1;
-  min-width: 0;
-  border-left: 1px solid rgba(var(--sage-rgb), 0.12);
-  padding: 14px 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  overflow: hidden;
-  background: rgba(255, 255, 255, 0.18);
-}
-
-.tada-result-rail-header {
+.tada-editor-panel-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 0 4px;
-  color: var(--text-tertiary);
-  font-size: 9.5px;
-  font-weight: 700;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-}
-
-.tada-result-search-wrap {
-  position: relative;
-  display: flex;
-  align-items: center;
-}
-
-.tada-result-search-icon {
-  position: absolute;
-  left: 10px;
-  color: var(--text-tertiary);
-  pointer-events: none;
-}
-
-.tada-result-search {
-  width: 100%;
-  height: 30px;
-  padding: 6px 10px 6px 30px;
-  border: 1px solid rgba(var(--sage-rgb), 0.12);
-  border-radius: var(--r-sm);
-  background: rgba(255, 255, 255, 0.58);
-  color: var(--text);
-  font: inherit;
+  padding: 0 2px 10px;
   font-size: 12px;
-  outline: none;
-  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
-}
-
-.tada-result-search:focus {
-  background: rgba(255, 255, 255, 0.9);
-  border-color: rgba(var(--sage-rgb), 0.38);
-  box-shadow: 0 0 0 3px rgba(var(--sage-rgb), 0.08);
-}
-
-.tada-result-page-list {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding-right: 2px;
-}
-
-.tada-result-page {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-  width: 100%;
-  min-width: 0;
-  padding: 8px 9px;
-  border: 1px solid transparent;
-  border-radius: var(--r-sm);
-  background: transparent;
-  color: var(--text-secondary);
-  font-family: inherit;
-  cursor: pointer;
-  text-align: left;
-  transition: background 0.15s, border-color 0.15s, color 0.15s;
-}
-
-.tada-result-page:hover {
-  background: rgba(var(--sage-rgb), 0.07);
+  font-weight: 650;
   color: var(--text);
 }
 
-.tada-result-page.active {
-  background: rgba(255, 255, 255, 0.72);
-  border-color: rgba(var(--sage-rgb), 0.20);
-  color: var(--text);
-}
-
-.tada-result-page-title {
-  max-width: 100%;
-  font-size: 12px;
-  font-weight: 620;
-  line-height: 1.35;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.tada-result-page-path {
-  max-width: 100%;
-  font-size: 10px;
+.tada-editor-panel-status {
+  font-size: 11px;
+  font-weight: 500;
   color: var(--text-tertiary);
-  line-height: 1.35;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
-.tada-result-no-pages,
-.tada-result-empty,
-.tada-result-loading {
-  color: var(--text-tertiary);
-  font-size: 12px;
+.tada-editor-error {
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(196, 90, 90, 0.08);
+  color: var(--danger, #c45a5a);
+  font-size: 11.5px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
 }
+
+/* ── Tada result iframe states ───────────────────────── */
 
 .tada-result-empty,
 .tada-result-loading {
@@ -2408,91 +2326,8 @@ button, input, select, textarea, canvas, a, label,
   justify-content: center;
   gap: 8px;
   text-align: center;
-}
-
-.tada-result-main {
-  grid-column: 1;
-  grid-row: 1;
-  min-width: 0;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.tada-result-toolbar {
-  flex-shrink: 0;
-  min-height: 48px;
-  padding: 10px 14px;
-  border-bottom: 1px solid rgba(var(--sage-rgb), 0.12);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  background: rgba(255, 255, 255, 0.18);
-}
-
-.tada-result-current {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-}
-
-.tada-result-current-title {
-  color: var(--text);
-  font-size: 12.5px;
-  font-weight: 650;
-  line-height: 1.3;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.tada-result-current-meta {
   color: var(--text-tertiary);
-  font-size: 10px;
-  font-weight: 550;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-.tada-result-nav {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  flex-shrink: 0;
-}
-
-.tada-result-nav-btn {
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  border-radius: var(--r-sm);
-  background: transparent;
-  color: var(--text-tertiary);
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s, opacity 0.15s;
-}
-
-.tada-result-nav-btn:hover:not(:disabled) {
-  background: rgba(var(--sage-rgb), 0.10);
-  color: var(--text);
-}
-
-.tada-result-nav-btn:disabled {
-  cursor: default;
-  opacity: 0.35;
-}
-
-.memex-content.tada-result-markdown {
-  flex: 1;
-  min-height: 0;
-  padding: 18px 26px 28px 48px;
+  font-size: 12px;
 }
 
 
@@ -3724,18 +3559,26 @@ button, input, select, textarea, canvas, a, label,
   box-shadow: 0 0 0 3px rgba(var(--sage-rgb), 0.08);
 }
 
-.chat-typing {
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--sage);
-  animation: chatBlink 1s infinite;
+.chat-message-bubble--status {
+  color: var(--text-secondary);
 }
 
-@keyframes chatBlink {
-  0%, 100% { opacity: 0.3; }
-  50% { opacity: 1; }
+.chat-working {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-secondary);
+  font-weight: 550;
+}
+
+.chat-working-spinner {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid rgba(var(--sage-rgb), 0.18);
+  border-top-color: var(--sage);
+  animation: spin 0.8s linear infinite;
+  flex: 0 0 auto;
 }
 
 /* ── Seeker View ──────────────────────────────────────────── */
@@ -4060,8 +3903,7 @@ button, input, select, textarea, canvas, a, label,
   padding: 24px 8px;
 }
 
-/* Compact effort picker in the chat header — pill-style trigger.
-   Trigger color tracks the selected level (low=sage, medium=amber, high=red). */
+/* Compact effort picker in the chat header. */
 .chat-effort-dropdown .tada-dropdown-trigger {
   padding: 3px 8px;
   border-radius: 9px;
@@ -4070,6 +3912,16 @@ button, input, select, textarea, canvas, a, label,
   min-width: 76px;
   gap: 4px;
   transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.chat-effort-dropdown--minimal .tada-dropdown-trigger {
+  background: rgba(var(--sage-rgb), 0.08);
+  border-color: rgba(var(--sage-rgb), 0.18);
+  color: var(--text-tertiary);
+}
+.chat-effort-dropdown--minimal .tada-dropdown-trigger:hover {
+  background: rgba(var(--sage-rgb), 0.14);
+  border-color: rgba(var(--sage-rgb), 0.28);
 }
 
 .chat-effort-dropdown--low .tada-dropdown-trigger {
@@ -4102,6 +3954,18 @@ button, input, select, textarea, canvas, a, label,
   border-color: rgba(201, 89, 75, 0.42);
 }
 
+.chat-effort-dropdown--xhigh .tada-dropdown-trigger,
+.chat-effort-dropdown--max .tada-dropdown-trigger {
+  background: rgba(142, 92, 180, 0.12);
+  border-color: rgba(142, 92, 180, 0.28);
+  color: rgb(102, 59, 135);
+}
+.chat-effort-dropdown--xhigh .tada-dropdown-trigger:hover,
+.chat-effort-dropdown--max .tada-dropdown-trigger:hover {
+  background: rgba(142, 92, 180, 0.20);
+  border-color: rgba(142, 92, 180, 0.42);
+}
+
 .chat-effort-dropdown .tada-dropdown-menu {
   font-size: 11.5px;
   min-width: 130px;
@@ -4125,9 +3989,12 @@ button, input, select, textarea, canvas, a, label,
   flex-shrink: 0;
   background: var(--text-tertiary);
 }
-.chat-effort-dropdown .tada-dropdown-item[data-value="low"]::before    { background: var(--sage); }
-.chat-effort-dropdown .tada-dropdown-item[data-value="medium"]::before { background: rgb(232, 152, 38); }
-.chat-effort-dropdown .tada-dropdown-item[data-value="high"]::before   { background: var(--danger); }
+.chat-effort-dropdown .tada-dropdown-item[data-value="minimal"]::before { background: var(--text-tertiary); }
+.chat-effort-dropdown .tada-dropdown-item[data-value="low"]::before     { background: var(--sage); }
+.chat-effort-dropdown .tada-dropdown-item[data-value="medium"]::before  { background: rgb(232, 152, 38); }
+.chat-effort-dropdown .tada-dropdown-item[data-value="high"]::before    { background: var(--danger); }
+.chat-effort-dropdown .tada-dropdown-item[data-value="xhigh"]::before,
+.chat-effort-dropdown .tada-dropdown-item[data-value="max"]::before     { background: rgb(142, 92, 180); }
 
 .chat-inline-activity {
   align-self: flex-start;

@@ -10,6 +10,7 @@ from pathlib import Path
 
 from server.feature_flags import is_enabled
 from agent.builder import _ensure_sandbox_async
+from agent.cli_backends import CliBackendConfig, cli_config_payload
 from apps.moments.runtime.scheduler import scheduled_service_due
 from server.cost_tracker import init_cost_tracking
 from server.config import DEFAULT_AGENT_MODEL
@@ -30,12 +31,14 @@ class MemoryIngest:
         api_key: str | None = None,
         subagent_model: str | None = None,
         subagent_api_key: str | None = None,
+        cli_config: CliBackendConfig | None = None,
     ):
         self.logs_dir = str(Path(logs_dir).resolve())
         self.model = model
         self.api_key = api_key
         self.subagent_model = subagent_model
         self.subagent_api_key = subagent_api_key
+        self.cli_config = cli_config
 
     def run(self, on_round=None) -> str:
         """Read new logs and update wiki pages. Blocking."""
@@ -43,6 +46,7 @@ class MemoryIngest:
         return ingest_run(
             self.logs_dir, model=self.model, api_key=self.api_key, on_round=on_round,
             subagent_model=self.subagent_model, subagent_api_key=self.subagent_api_key,
+            cli_config=self.cli_config,
         )
 
 
@@ -56,12 +60,14 @@ class MemoryLint:
         api_key: str | None = None,
         subagent_model: str | None = None,
         subagent_api_key: str | None = None,
+        cli_config: CliBackendConfig | None = None,
     ):
         self.logs_dir = str(Path(logs_dir).resolve())
         self.model = model
         self.api_key = api_key
         self.subagent_model = subagent_model
         self.subagent_api_key = subagent_api_key
+        self.cli_config = cli_config
 
     def run(self, on_round=None) -> str:
         """Lint the wiki. Blocking."""
@@ -69,6 +75,7 @@ class MemoryLint:
         return lint_run(
             self.logs_dir, model=self.model, api_key=self.api_key, on_round=on_round,
             subagent_model=self.subagent_model, subagent_api_key=self.subagent_api_key,
+            cli_config=self.cli_config,
         )
 
 
@@ -95,6 +102,7 @@ async def run_memory_pipeline_once(state) -> bool:
                 "api_key": api_key,
                 "subagent_model": subagent_model,
                 "subagent_api_key": subagent_api_key,
+                "cli_backend_config": cli_config_payload(cfg),
             },
             on_event=lambda event: relay_worker_event(state, event),
         )
@@ -124,6 +132,11 @@ async def run_memory_service(state) -> None:
     # agent work initializes its own sandbox inside the background worker.
     await _ensure_sandbox_async([logs_dir])
 
+    # Local in-flight guard. Memory ingest always exceeds SCAN_INTERVAL (60s),
+    # so without this a tick fired mid-run would spawn a duplicate worker that
+    # races on `memory/.cli/` and `memory/.last_run`.
+    in_flight = False
+
     while True:
         try:
             await asyncio.sleep(SCAN_INTERVAL)
@@ -131,11 +144,20 @@ async def run_memory_service(state) -> None:
             if not (is_enabled(state.config, "memory") and state.config.memory_enabled):
                 continue
 
+            if in_flight or "memory" in state.active_agents \
+                    or "memory" in state.background_work_in_flight:
+                logger.debug("Memory wiki service: skip tick, already in flight")
+                continue
+
             schedule = getattr(state.config, "memory_schedule", "daily at 3am")
             if not scheduled_service_due(schedule, run_checkpoint_file):
                 continue
 
-            await run_memory_pipeline_once(state)
+            in_flight = True
+            try:
+                await run_memory_pipeline_once(state)
+            finally:
+                in_flight = False
 
         except asyncio.CancelledError:
             logger.info("Memory wiki service stopped")

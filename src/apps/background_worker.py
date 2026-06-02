@@ -84,6 +84,7 @@ def _apply_low_priority() -> None:
 
 
 def _moments_execute(payload: dict[str, Any]) -> dict[str, Any]:
+    from agent.cli_backends import cli_config_from_payload
     from apps.moments.runtime.execute import run as execute_moment
 
     activity = payload.get("activity") or {}
@@ -91,6 +92,7 @@ def _moments_execute(payload: dict[str, Any]) -> dict[str, Any]:
     message = str(activity.get("message") or "Running Tada")
     slug = activity.get("slug") if isinstance(activity.get("slug"), str) else None
     cadence = activity.get("cadence") if isinstance(activity.get("cadence"), str) else None
+    cli_config = cli_config_from_payload(payload.get("cli_backend_config"))
 
     _activity(agent, message, slug=slug, cadence=cadence)
     on_round = _make_round_callback(agent, message, slug=slug, cadence=cadence)
@@ -107,6 +109,7 @@ def _moments_execute(payload: dict[str, Any]) -> dict[str, Any]:
             on_round=on_round,
             subagent_model=payload.get("subagent_model"),
             subagent_api_key=payload.get("subagent_api_key"),
+            cli_config=cli_config,
         )
         return {"success": bool(success)}
     finally:
@@ -114,6 +117,7 @@ def _moments_execute(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def _moments_discovery(payload: dict[str, Any]) -> dict[str, Any]:
+    from agent.cli_backends import cli_config_from_payload
     from apps.moments.core.incremental import write_checkpoint
     from apps.moments.runtime.discovery import MomentsDiscovery, TaskFilter, TriggersCheck
 
@@ -122,6 +126,7 @@ def _moments_discovery(payload: dict[str, Any]) -> dict[str, Any]:
     api_key = payload.get("api_key")
     subagent_model = payload.get("subagent_model")
     subagent_api_key = payload.get("subagent_api_key")
+    cli_config = cli_config_from_payload(payload.get("cli_backend_config"))
     summaries: dict[str, str] = {}
 
     agent = "moments_discovery"
@@ -129,13 +134,16 @@ def _moments_discovery(payload: dict[str, Any]) -> dict[str, Any]:
         _activity(agent, "Discovering Tadas...")
         summaries["discovery"] = MomentsDiscovery(
             logs_dir, model, api_key, subagent_model, subagent_api_key,
+            cli_config=cli_config,
         ).run(write_run_checkpoint=False)
 
         _activity(agent, "Promoting Tadas...")
         summaries["promotion"] = TaskFilter(
             logs_dir, model, api_key, subagent_model, subagent_api_key,
+            cli_config=cli_config,
         ).run(write_run_checkpoint=False)
 
+        # Triggers stays on Gemini — not in the swap list.
         _activity(agent, "Checking Triggers...")
         summaries["triggers"] = TriggersCheck(
             logs_dir, model, api_key, subagent_model, subagent_api_key,
@@ -150,6 +158,7 @@ def _moments_discovery(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def _memory_pipeline(payload: dict[str, Any]) -> dict[str, Any]:
+    from agent.cli_backends import cli_config_from_payload
     from apps.memory.service import MemoryIngest, MemoryLint
 
     logs_dir = payload["logs_dir"]
@@ -157,6 +166,7 @@ def _memory_pipeline(payload: dict[str, Any]) -> dict[str, Any]:
     api_key = payload.get("api_key")
     subagent_model = payload.get("subagent_model")
     subagent_api_key = payload.get("subagent_api_key")
+    cli_config = cli_config_from_payload(payload.get("cli_backend_config"))
     summaries: dict[str, str] = {}
 
     agent = "memory"
@@ -165,12 +175,14 @@ def _memory_pipeline(payload: dict[str, Any]) -> dict[str, Any]:
         _activity(agent, ingest_msg)
         summaries["ingest"] = MemoryIngest(
             logs_dir, model, api_key, subagent_model, subagent_api_key,
+            cli_config=cli_config,
         ).run(on_round=_make_round_callback(agent, ingest_msg))
 
         lint_msg = "Auditing memories..."
         _activity(agent, lint_msg)
         summaries["lint"] = MemoryLint(
             logs_dir, model, api_key, subagent_model, subagent_api_key,
+            cli_config=cli_config,
         ).run(on_round=_make_round_callback(agent, lint_msg))
 
         return {"success": True, "summaries": summaries}

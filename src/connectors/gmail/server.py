@@ -80,6 +80,8 @@ def fetch_emails(since: float | None = None) -> str:
             _id_to_meta[msg_id] = {"subject": subject, "from": from_}
 
     _unread_watch = _unread_watch[-MAX_WATCH:]
+    watched = set(_unread_watch)
+    _id_to_meta = {msg_id: meta for msg_id, meta in _id_to_meta.items() if msg_id in watched}
 
     # 2. Check watched unread emails for read events
     headers = {"Authorization": f"Bearer {google_access_token()}"}
